@@ -1,6 +1,6 @@
 //! Generic dashboard web server: serves the control API (list/start/stop emulator engines)
 //! and the static dashboard UI (embedded HTML/CSS/JS). Knows nothing about any specific
-//! Azure resource emulator - each module (e.g. `sbemu-servicebus-engine`) provides its own
+//! Azure resource emulator - each module (e.g. `emu-servicebus-engine`) provides its own
 //! axum router that the composition root (`emu/ui/gui`) nests alongside this one.
 
 use std::net::SocketAddr;
@@ -14,10 +14,10 @@ use axum::{
     Json, Router,
 };
 use rust_embed::RustEmbed;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 
-use sbemu_engine::{EngineRegistry, EngineSummary, ResourceGroup, ResourceKind, Session};
+use emu_registry::{EngineRegistry, EngineSummary, GroupSnapshot, ResourceGroup, ResourceKind};
 
 #[derive(RustEmbed)]
 #[folder = "assets/"]
@@ -42,9 +42,6 @@ pub fn dashboard_router(state: AppState) -> Router {
         .route("/api/resource-groups/:id", axum::routing::delete(delete_resource_group).patch(rename_resource_group))
         .route("/api/resource-groups/:id/start", post(start_resource_group))
         .route("/api/resource-groups/:id/stop", post(stop_resource_group))
-        .route("/api/sessions", get(list_sessions).post(save_session))
-        .route("/api/sessions/:file", axum::routing::delete(delete_session))
-        .route("/api/sessions/:file/load", post(load_session))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -115,6 +112,7 @@ async fn create_engine(
         .create(&req.kind, &req.name, &req.group_id)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    persist_group(&state.registry, &req.group_id);
     Ok(Json(
         EngineSummary::from_engine(engine.as_ref(), req.group_id).await,
     ))
@@ -124,11 +122,15 @@ async fn delete_engine(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    let group_id = state.registry.group_of(&id);
     state
         .registry
         .remove(&id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Some(group_id) = group_id {
+        persist_group(&state.registry, &group_id);
+    }
     Ok(StatusCode::OK)
 }
 
@@ -146,6 +148,9 @@ async fn rename_engine(
         .registry
         .rename(&id, req.name.trim())
         .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
+    if let Some(group_id) = state.registry.group_of(&id) {
+        persist_group(&state.registry, &group_id);
+    }
     Ok(StatusCode::OK)
 }
 
@@ -168,7 +173,9 @@ async fn create_resource_group(
     State(state): State<AppState>,
     Json(req): Json<CreateResourceGroupRequest>,
 ) -> Json<ResourceGroup> {
-    Json(state.registry.create_group(&req.name, None))
+    let group = state.registry.create_group(&req.name, None);
+    persist_group(&state.registry, &group.id);
+    Json(group)
 }
 
 async fn delete_resource_group(
@@ -180,6 +187,7 @@ async fn delete_resource_group(
         .delete_group(&id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    delete_group_file(&id);
     Ok(StatusCode::OK)
 }
 
@@ -192,6 +200,7 @@ async fn rename_resource_group(
         .registry
         .rename_group(&id, req.name.trim())
         .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
+    persist_group(&state.registry, &id);
     Ok(StatusCode::OK)
 }
 
@@ -224,122 +233,88 @@ async fn stop_resource_group(
     Ok(StatusCode::OK)
 }
 
-// ------------------------------------------------------------------ sessions
+// ------------------------------------------------------------------ persistence
 
-fn sessions_dir() -> PathBuf {
+/// Each resource group is persisted as its own `{group-id}.json` file under this folder -
+/// sits alongside the existing `data/` (per-instance queue/message data) and `certs/`
+/// folders under the same `%APPDATA%/EmuEngine` base. One file per group (rather than one
+/// big file for everything) means every edit only rewrites the group actually touched, and
+/// a group's file is simply deleted when the group itself is deleted.
+fn groups_dir() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("EmuEngine").join("sessions");
+    let dir = base.join("EmuEngine").join("groups");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
 
-/// Keeps saved session file names filesystem-safe (Windows disallows `<>:"/\|?*`).
-fn sanitize_file_stem(s: &str) -> String {
-    let cleaned: String = s
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
-                c
-            } else {
-                '-'
+fn group_file_path(group_id: &str) -> PathBuf {
+    groups_dir().join(format!("{group_id}.json"))
+}
+
+/// Rewrites `group_id`'s persisted file from the registry's current in-memory state.
+/// Best-effort: logs a warning and otherwise does nothing on failure or if the group no
+/// longer exists - persistence must never take down a request that already succeeded in
+/// memory. Called after every mutation that touches a group's resources or its own name -
+/// also public so the composition root (`emu/ui/gui`) can persist the default group it
+/// creates on a brand new install (first run, before any user edit has happened).
+pub fn persist_group(registry: &EngineRegistry, group_id: &str) {
+    let Some(snapshot) = registry.snapshot_group(group_id) else {
+        return;
+    };
+    match serde_json::to_string_pretty(&snapshot) {
+        Ok(json) => {
+            if let Err(err) = std::fs::write(group_file_path(group_id), json) {
+                tracing::warn!(?err, %group_id, "failed to persist resource group");
             }
-        })
-        .collect();
-    let cleaned = cleaned.trim().to_string();
-    if cleaned.is_empty() {
-        chrono::Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string()
-    } else {
-        cleaned
-    }
-}
-
-#[derive(Serialize)]
-struct SessionSummary {
-    file: String,
-    name: String,
-    created_at: chrono::DateTime<chrono::Utc>,
-    resource_count: usize,
-}
-
-impl From<(&str, Session)> for SessionSummary {
-    fn from((file, session): (&str, Session)) -> Self {
-        Self {
-            file: file.to_string(),
-            name: session.name,
-            created_at: session.created_at,
-            resource_count: session.resources.len(),
         }
+        Err(err) => tracing::warn!(?err, %group_id, "failed to serialize resource group"),
     }
 }
 
-async fn list_sessions() -> Result<Json<Vec<SessionSummary>>, (StatusCode, String)> {
-    let dir = sessions_dir();
-    let mut out = Vec::new();
-    let entries = std::fs::read_dir(&dir)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+/// Deletes `group_id`'s persisted file (e.g. after the group itself was deleted).
+/// Best-effort - a missing file is not an error.
+fn delete_group_file(group_id: &str) {
+    let _ = std::fs::remove_file(group_file_path(group_id));
+}
+
+/// Reads every persisted `{group-id}.json` file and restores each into `registry`,
+/// recreating every group and instance exactly as last saved (including any renames).
+/// Returns `true` if at least one group was loaded, `false` on first-ever run (empty/
+/// missing folder) - callers should fall back to creating a fresh default setup in that
+/// case. The caller must register every resource `kind` factory the persisted instances
+/// might need *before* calling this, since restoring calls each kind's factory closure.
+pub async fn load_all_groups(registry: &EngineRegistry) -> bool {
+    let dir = groups_dir();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return false;
+    };
+    let mut restored_any = false;
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(err) => {
+                tracing::warn!(?err, path = %path.display(), "failed to read persisted resource group");
+                continue;
+            }
         };
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
+        let snapshot: GroupSnapshot = match serde_json::from_str(&text) {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                tracing::warn!(?err, path = %path.display(), "failed to parse persisted resource group");
+                continue;
+            }
         };
-        let Ok(session) = serde_json::from_str::<Session>(&text) else {
+        if let Err(err) = registry.restore_group(&snapshot).await {
+            tracing::warn!(?err, path = %path.display(), "failed to restore persisted resource group");
             continue;
-        };
-        out.push(SessionSummary::from((stem, session)));
+        }
+        restored_any = true;
     }
-    out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    Ok(Json(out))
-}
-
-#[derive(Deserialize)]
-struct SaveSessionRequest {
-    name: Option<String>,
-}
-
-async fn save_session(
-    State(state): State<AppState>,
-    Json(req): Json<SaveSessionRequest>,
-) -> Result<Json<SessionSummary>, (StatusCode, String)> {
-    let name = req
-        .name
-        .filter(|n| !n.trim().is_empty())
-        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string());
-    let session = state.registry.snapshot(name.clone());
-    let file_stem = sanitize_file_stem(&name);
-    let path = sessions_dir().join(format!("{file_stem}.json"));
-    let json = serde_json::to_string_pretty(&session)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    std::fs::write(&path, json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(SessionSummary::from((file_stem.as_str(), session))))
-}
-
-async fn load_session(
-    State(state): State<AppState>,
-    Path(file): Path<String>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let path = sessions_dir().join(format!("{file}.json"));
-    let text = std::fs::read_to_string(&path)
-        .map_err(|_| (StatusCode::NOT_FOUND, "session not found".to_string()))?;
-    let session: Session =
-        serde_json::from_str(&text).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    state
-        .registry
-        .restore(&session)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(StatusCode::OK)
-}
-
-async fn delete_session(Path(file): Path<String>) -> Result<StatusCode, (StatusCode, String)> {
-    let path = sessions_dir().join(format!("{file}.json"));
-    std::fs::remove_file(&path).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(StatusCode::OK)
+    restored_any
 }
 
 // ------------------------------------------------------------------- static

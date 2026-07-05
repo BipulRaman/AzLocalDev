@@ -1,4 +1,4 @@
-//! AMQP 1.0 protocol adapter. Translates AMQP frames <-> [`sbemu_core::Broker`] commands.
+//! AMQP 1.0 protocol adapter. Translates AMQP frames <-> [`emu_servicebus_core::Broker`] commands.
 //! Contains no business logic beyond that translation.
 
 mod dev_cert;
@@ -21,7 +21,7 @@ use fe2o3_amqp::types::messaging::{
 use fe2o3_amqp::types::performatives::Attach;
 use fe2o3_amqp::types::primitives::{Array, SimpleValue, Symbol, Value};
 use fe2o3_amqp::types::sasl::{SaslCode, SaslInit, SaslOutcome, SaslResponse};
-use sbemu_core::{Broker, DeliveryMode, EntityHandle, NewMessage};
+use emu_servicebus_core::{Broker, DeliveryMode, EntityHandle, NewMessage};
 use tokio::net::TcpListener;
 
 pub use dev_cert::{load_or_generate as load_or_generate_dev_cert, DevCertificate};
@@ -665,7 +665,7 @@ async fn apply_outcome(entity: &EntityHandle, lock_token: uuid::Uuid, outcome: O
     }
 }
 
-fn new_message_to_amqp(msg: &sbemu_core::BrokeredMessage) -> Message<Body<Value>> {
+fn new_message_to_amqp(msg: &emu_servicebus_core::BrokeredMessage) -> Message<Body<Value>> {
     let mut props = Properties::default();
     props.message_id = Some(msg.message_id.clone().into());
     if let Some(cid) = &msg.correlation_id {

@@ -29,11 +29,11 @@ thiserror = "1"
 bytes = "1"
 async-trait = "0.1"
 
-sbemu-core = { path = "emu/module/servicebus/core" }
-sbemu-amqp = { path = "emu/module/servicebus/amqp" }
-sbemu-engine = { path = "emu/services/engine" }
-sbemu-servicebus-engine = { path = "emu/module/servicebus/engine" }
-sbemu-web = { path = "emu/ui/web" }
+emu-servicebus-core = { path = "emu/module/servicebus/core" }
+emu-servicebus-amqp = { path = "emu/module/servicebus/amqp" }
+emu-registry = { path = "emu/services/engine" }
+emu-servicebus-engine = { path = "emu/module/servicebus/engine" }
+emu-web = { path = "emu/ui/web" }
 
 # Locally patched fe2o3-amqp: adds an optional custom delivery-tag override on
 # `Sendable`/`Sender::send`, so we can send AMQP delivery-tags that Azure Service

@@ -1,10 +1,10 @@
 [package]
-name = "sbemu-web"
+name = "emu-web"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-sbemu-engine = { workspace = true }
+emu-registry = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

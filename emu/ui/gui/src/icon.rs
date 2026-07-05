@@ -10,7 +10,7 @@ use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg::{self, Tree};
 
 /// The icon's source SVG (viewBox `0 0 100 100`). See the module doc comment for why this
-/// reaches into the `sbemu-web` crate's asset folder instead of keeping a local copy.
+/// reaches into the `emu-web` crate's asset folder instead of keeping a local copy.
 const SVG_SOURCE: &str = include_str!("../../web/assets/icon.svg");
 
 /// Renders the icon as raw RGBA8 pixels (straight, non-premultiplied alpha - what

@@ -1,5 +1,5 @@
 [package]
-name = "sbemu-engine"
+name = "emu-registry"
 version.workspace = true
 edition.workspace = true
 

@@ -70,6 +70,9 @@ body {
   font-size: 13.5px;
   color: var(--text);
   flex-shrink: 0;
+  /* Matches the sidebar's width so the search box lines up with the content column
+     below instead of floating right next to the logo. */
+  width: 210px;
 }
 .topbar-brand-mark {
   display: block;
@@ -79,6 +82,7 @@ body {
 }
 
 .topbar-search {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -89,8 +93,38 @@ body {
   max-width: 360px;
   flex: 1;
 }
+.topbar-search:focus-within { border-color: var(--primary); background: var(--surface); }
 .topbar-search svg { width: 14px; height: 14px; color: var(--text-faint); flex-shrink: 0; }
-.topbar-search input { border: none; outline: none; background: transparent; font-size: 13px; width: 100%; color: var(--text-muted); }
+.topbar-search input { border: none; outline: none; background: transparent; font-size: 13px; width: 100%; color: var(--text); }
+
+.search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 30;
+  padding: 4px;
+}
+.search-result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.search-result-row:hover { background: var(--primary-soft); }
+.search-result-label { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-type { color: var(--text-faint); font-size: 11px; flex-shrink: 0; }
+.search-empty { padding: 10px 9px; color: var(--text-faint); font-size: 12.5px; }
 
 /* ---------------------------------------------------------------- layout */
 

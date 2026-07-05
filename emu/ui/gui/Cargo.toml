@@ -1,5 +1,5 @@
 [package]
-name = "sbemu-gui"
+name = "emu-gui"
 version.workspace = true
 edition.workspace = true
 
@@ -8,9 +8,9 @@ name = "emu-engine"
 path = "src/main.rs"
 
 [dependencies]
-sbemu-engine = { workspace = true }
-sbemu-servicebus-engine = { workspace = true }
-sbemu-web = { workspace = true }
+emu-registry = { workspace = true }
+emu-servicebus-engine = { workspace = true }
+emu-web = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -1,12 +1,12 @@
 [package]
-name = "sbemu-servicebus-engine"
+name = "emu-servicebus-engine"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-sbemu-core = { workspace = true }
-sbemu-amqp = { workspace = true }
-sbemu-engine = { workspace = true }
+emu-servicebus-core = { workspace = true }
+emu-servicebus-amqp = { workspace = true }
+emu-registry = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }

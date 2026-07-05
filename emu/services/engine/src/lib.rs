@@ -44,7 +44,7 @@ pub trait EmulatorEngine: Send + Sync {
     /// when running.
     async fn detail(&self) -> Option<String>;
     /// Opaque, kind-specific config needed to recreate this instance later (e.g. the
-    /// Service Bus engine returns its AMQP port). Used for session save/restore.
+    /// Service Bus engine returns its AMQP port). Used to persist/restore group snapshots.
     fn config(&self) -> serde_json::Value;
 }
 
@@ -215,8 +215,8 @@ impl EngineRegistry {
     /// Registers a factory for a creatable resource `kind`, so the dashboard's "New
     /// resource" flow can construct new instances of it by name alone. `display_name` is
     /// shown in the resource-type picker. The factory receives `Some(config)` when
-    /// restoring a saved session, and `None` when creating a brand new instance (in which
-    /// case the factory should pick its own defaults, e.g. auto-assign a port).
+    /// restoring a persisted group snapshot, and `None` when creating a brand new instance
+    /// (in which case the factory should pick its own defaults, e.g. auto-assign a port).
     pub fn register_kind(
         &self,
         kind: &str,
@@ -271,8 +271,8 @@ impl EngineRegistry {
         Ok(engine)
     }
 
-    /// Recreates a specific instance from a saved session (fixed id + config), auto-starts
-    /// it, and registers it into `group_id`.
+    /// Recreates a specific instance from a persisted group snapshot (fixed id + config),
+    /// auto-starts it, and registers it into `group_id`.
     pub async fn create_with_config(
         &self,
         kind: &str,
@@ -299,18 +299,6 @@ impl EngineRegistry {
             .insert(engine.id().to_string(), group_id.to_string());
         state.engines.push(engine.clone());
         Ok(engine)
-    }
-
-    /// Stops and removes every instance and every group. Used before restoring a saved
-    /// session.
-    pub async fn clear(&self) {
-        for engine in self.all() {
-            let _ = engine.stop().await;
-        }
-        let mut state = self.state.lock().unwrap();
-        state.engines.clear();
-        state.engine_groups.clear();
-        state.groups.clear();
     }
 
     /// Stops and removes an instance from the registry.
@@ -380,39 +368,48 @@ impl EngineRegistry {
         }
     }
 
-    // --------------------------------------------------------------- sessions
+    // --------------------------------------------------------------- persistence
 
-    /// Captures every current group and instance as a [`Session`] that can be serialized
-    /// to disk and restored later with [`EngineRegistry::restore`].
-    pub fn snapshot(&self, name: String) -> Session {
-        let engines = self.all();
-        let resources = engines
+    /// Captures `group_id` and every instance inside it as a [`GroupSnapshot`], for
+    /// persisting to that group's own `{group-id}.json` file. Returns `None` if the group
+    /// doesn't exist.
+    pub fn snapshot_group(&self, group_id: &str) -> Option<GroupSnapshot> {
+        let group = self
+            .state
+            .lock()
+            .unwrap()
+            .groups
             .iter()
-            .map(|e| SessionResource {
+            .find(|g| g.id == group_id)
+            .cloned()?;
+        let resources = self
+            .in_group(group_id)
+            .iter()
+            .map(|e| GroupResource {
                 id: e.id().to_string(),
                 kind: e.kind().to_string(),
                 name: e.display_name(),
-                group_id: self.group_of(e.id()).unwrap_or_default(),
                 config: e.config(),
             })
             .collect();
-        Session {
-            name,
-            created_at: chrono::Utc::now(),
-            groups: self.list_groups(),
+        Some(GroupSnapshot {
+            id: group.id,
+            name: group.name,
+            created_at: group.created_at,
             resources,
-        }
+        })
     }
 
-    /// Replaces every current group/instance with the ones described by `session`
-    /// (stopping and discarding whatever is currently registered first).
-    pub async fn restore(&self, session: &Session) -> anyhow::Result<()> {
-        self.clear().await;
-        for g in &session.groups {
-            self.create_group(&g.name, Some(g.id.clone()));
+    /// Recreates a group and every instance inside it from a [`GroupSnapshot`] (e.g. loaded
+    /// from that group's `{group-id}.json` file at startup). If the group doesn't already
+    /// exist it's created with the snapshot's exact id, so re-persisting later still writes
+    /// to the same file.
+    pub async fn restore_group(&self, snapshot: &GroupSnapshot) -> anyhow::Result<()> {
+        if !self.state.lock().unwrap().groups.iter().any(|g| g.id == snapshot.id) {
+            self.create_group(&snapshot.name, Some(snapshot.id.clone()));
         }
-        for r in &session.resources {
-            self.create_with_config(&r.kind, r.id.clone(), &r.name, &r.group_id, r.config.clone())
+        for r in &snapshot.resources {
+            self.create_with_config(&r.kind, r.id.clone(), &r.name, &snapshot.id, r.config.clone())
                 .await?;
         }
         Ok(())
@@ -429,22 +426,23 @@ fn bump_next_seq(next_seq: &mut u64, kind: &str, id: &str) {
     }
 }
 
-/// One resource instance captured in a [`Session`].
+/// One resource instance captured inside a [`GroupSnapshot`] - everything needed to
+/// recreate the *instance* (identity/addressing/name), not its contents (e.g. queue or
+/// message data, which each module persists separately, referenced by matching `id`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionResource {
+pub struct GroupResource {
     pub id: String,
     pub kind: String,
     pub name: String,
-    pub group_id: String,
     pub config: serde_json::Value,
 }
 
-/// A named, point-in-time snapshot of every resource group and instance the user had set
-/// up, so they can save it to disk (as JSON) and load it back later.
+/// A full, point-in-time snapshot of one resource group and every instance inside it - the
+/// entire contents of that group's persisted `{group-id}.json` file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Session {
+pub struct GroupSnapshot {
+    pub id: String,
     pub name: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
-    pub groups: Vec<ResourceGroup>,
-    pub resources: Vec<SessionResource>,
+    pub resources: Vec<GroupResource>,
 }

@@ -1,5 +1,5 @@
 [package]
-name = "sbemu-core"
+name = "emu-servicebus-core"
 version.workspace = true
 edition.workspace = true
 

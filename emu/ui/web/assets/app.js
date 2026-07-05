@@ -158,6 +158,73 @@ el("rename-form").addEventListener("submit", async (ev) => {
   }
 });
 
+// --------------------------------------------------------- global search
+
+function kindDisplayName(kind) {
+  const k = kindCache.find((x) => x.kind === kind);
+  return k ? k.display_name : kind;
+}
+
+function closeGlobalSearch() {
+  el("global-search-results").classList.add("hidden");
+  el("global-search-results").innerHTML = "";
+}
+
+function renderGlobalSearchResults(query) {
+  const results = el("global-search-results");
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    closeGlobalSearch();
+    return;
+  }
+
+  const items = [];
+  groupCache
+    .filter((g) => g.name.toLowerCase().includes(q))
+    .forEach((g) => items.push({ label: g.name, type: "Resource group", onSelect: () => navGroup(g.id) }));
+  engineCache
+    .filter((e) => e.display_name.toLowerCase().includes(q))
+    .forEach((e) => items.push({ label: e.display_name, type: kindDisplayName(e.kind), onSelect: () => navInstance(e.id) }));
+
+  results.innerHTML = "";
+  if (items.length === 0) {
+    results.innerHTML = `<div class="search-empty">No matches</div>`;
+  } else {
+    items.slice(0, 12).forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "search-result-row";
+      row.innerHTML = `<span class="search-result-label"></span><span class="search-result-type"></span>`;
+      row.querySelector(".search-result-label").textContent = item.label;
+      row.querySelector(".search-result-type").textContent = item.type;
+      // mousedown (not click) fires before the input's blur handler would otherwise
+      // close the dropdown out from under the click.
+      row.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        item.onSelect();
+        el("global-search-input").value = "";
+        closeGlobalSearch();
+      });
+      results.appendChild(row);
+    });
+  }
+  results.classList.remove("hidden");
+}
+
+el("global-search-input").addEventListener("input", (ev) => renderGlobalSearchResults(ev.target.value));
+el("global-search-input").addEventListener("focus", (ev) => {
+  if (ev.target.value.trim()) renderGlobalSearchResults(ev.target.value);
+});
+el("global-search-input").addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") {
+    ev.target.value = "";
+    ev.target.blur();
+    closeGlobalSearch();
+  }
+});
+document.addEventListener("click", (ev) => {
+  if (!el("global-search").contains(ev.target)) closeGlobalSearch();
+});
+
 // -------------------------------------------------------------- breadcrumb
 
 function renderBreadcrumbs() {

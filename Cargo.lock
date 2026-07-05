@@ -665,6 +665,104 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
+name = "emu-gui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "emu-registry",
+ "emu-servicebus-engine",
+ "emu-web",
+ "open",
+ "resvg",
+ "tao",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "tray-icon",
+]
+
+[[package]]
+name = "emu-registry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "emu-servicebus-amqp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs 5.0.1",
+ "emu-servicebus-core",
+ "fe2o3-amqp",
+ "fe2o3-amqp-types",
+ "rcgen",
+ "rustls",
+ "rustls-pemfile",
+ "serde_amqp",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "emu-servicebus-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dashmap",
+ "serde",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "emu-servicebus-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "dirs 5.0.1",
+ "emu-registry",
+ "emu-servicebus-amqp",
+ "emu-servicebus-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "emu-web"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "dirs 5.0.1",
+ "emu-registry",
+ "mime_guess",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2593,104 +2691,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "sbemu-amqp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dirs 5.0.1",
- "fe2o3-amqp",
- "fe2o3-amqp-types",
- "rcgen",
- "rustls",
- "rustls-pemfile",
- "sbemu-core",
- "serde_amqp",
- "tokio",
- "tokio-rustls",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "sbemu-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dashmap",
- "serde",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "sbemu-engine"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "sbemu-gui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "open",
- "resvg",
- "sbemu-engine",
- "sbemu-servicebus-engine",
- "sbemu-web",
- "tao",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "tray-icon",
-]
-
-[[package]]
-name = "sbemu-servicebus-engine"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "chrono",
- "dirs 5.0.1",
- "sbemu-amqp",
- "sbemu-core",
- "sbemu-engine",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "sbemu-web"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "dirs 5.0.1",
- "mime_guess",
- "rust-embed",
- "sbemu-engine",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
- "tracing",
 ]
 
 [[package]]
