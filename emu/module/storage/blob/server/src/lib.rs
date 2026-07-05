@@ -57,6 +57,14 @@ fn metadata_from_headers(headers: &HeaderMap) -> HashMap<String, String> {
 pub fn router(store: BlobStore) -> Router {
     Router::new()
         .route("/:account", get(list_containers))
+        // The real Blob REST API's account-level "List Containers" call is always issued
+        // against the bare account root WITH a trailing slash (e.g.
+        // `GET https://<account>.blob.core.windows.net/?comp=list`) - the Azure Functions
+        // host's own storage health probe does exactly this. axum's router treats `/:account`
+        // and `/:account/` as distinct routes (no automatic trailing-slash merging), so
+        // without this second route that probe 404s, which the host then reports as
+        // `azure.functions.webjobs.storage: Unhealthy` even though every other blob call works.
+        .route("/:account/", get(list_containers))
         .route(
             "/:account/:container",
             axum::routing::put(container_put)

@@ -51,6 +51,12 @@ fn query_usize(query: &HashMap<String, String>, key: &str, default: usize) -> us
 pub fn router(store: QueueStore) -> Router {
     Router::new()
         .route("/:account", get(list_queues))
+        // Real Queue REST clients (and the Functions host's storage health probe) issue the
+        // account-level "List Queues" call against the bare account root WITH a trailing
+        // slash (`GET https://<account>.queue.core.windows.net/?comp=list`). axum treats
+        // `/:account` and `/:account/` as distinct routes, so without this the probe 404s -
+        // see the identical fix in `emu-storage-blob-server`.
+        .route("/:account/", get(list_queues))
         .route("/:account/:queue", axum::routing::put(queue_put).delete(queue_delete).get(queue_get))
         .route(
             "/:account/:queue/messages",

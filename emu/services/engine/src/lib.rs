@@ -203,9 +203,20 @@ impl EngineRegistry {
     // ---------------------------------------------------------------- engines
 
     /// Registers an already-constructed engine instance (e.g. one created at startup) into
-    /// `group_id`.
+    /// `group_id`. A no-op (with a warning logged) if `engine.id()` is already registered -
+    /// guards against ending up with two engine instances silently sharing the same id (see
+    /// the identical guard in `create_with_config`).
     pub fn register(&self, engine: Arc<dyn EmulatorEngine>, group_id: &str) {
         let mut state = self.state.lock().unwrap();
+        if state.engines.iter().any(|e| e.id() == engine.id()) {
+            tracing::warn!(
+                id = engine.id(),
+                %group_id,
+                "duplicate resource id passed to register() - ignoring, an instance with \
+                 this id is already registered"
+            );
+            return;
+        }
         state
             .engine_groups
             .insert(engine.id().to_string(), group_id.to_string());
@@ -272,7 +283,14 @@ impl EngineRegistry {
     }
 
     /// Recreates a specific instance from a persisted group snapshot (fixed id + config),
-    /// auto-starts it, and registers it into `group_id`.
+    /// auto-starts it, and registers it into `group_id`. If `id` is already registered
+    /// (e.g. a corrupted/duplicated persisted group file listed the same resource id twice,
+    /// either within one group or across two different group files), the existing engine is
+    /// returned as-is and no second instance is created - starting a second engine with the
+    /// same id would spawn a second listener racing the first for the same ports, silently
+    /// splitting state between two independent in-memory instances that both claim the same
+    /// id (the dashboard/API would then only ever reach whichever one happened to be
+    /// registered last, while the other could still hold the real listening socket).
     pub async fn create_with_config(
         &self,
         kind: &str,
@@ -283,6 +301,15 @@ impl EngineRegistry {
     ) -> anyhow::Result<Arc<dyn EmulatorEngine>> {
         let factory = {
             let mut state = self.state.lock().unwrap();
+            if let Some(existing) = state.engines.iter().find(|e| e.id() == id) {
+                tracing::warn!(
+                    %id, %kind, %group_id,
+                    "duplicate resource id encountered while restoring a persisted resource \
+                     group - skipping it instead of starting a second conflicting instance; \
+                     de-duplicate the persisted group JSON files under the groups directory"
+                );
+                return Ok(existing.clone());
+            }
             bump_next_seq(&mut state.next_seq, kind, &id);
             state
                 .factories

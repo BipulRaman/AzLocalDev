@@ -1,12 +1,14 @@
 # Az.Local.Dev
 
-A local, self-contained emulator for Azure resources — currently **Azure Service Bus** and **Azure Storage
-(Blob)** — with a system-tray app and a browser dashboard for managing everything, so you can develop and
-test against Azure SDKs (and Azure Functions) without a real Azure subscription.
+A local, self-contained emulator for Azure resources — currently **Azure Service Bus**, **Azure Storage**
+(Blob + Queue + Table), and **Application Insights** — with a system-tray app and a browser dashboard for
+managing everything, so you can develop and test against Azure SDKs (and Azure Functions) without a real
+Azure subscription.
 
 Speaks the real wire protocols, so unmodified apps using the official Azure SDKs (.NET, Java, JS, Python, Go)
 can connect to it exactly as they would to real Azure, just by pointing a connection string at `localhost`:
-real **AMQP 1.0** for Service Bus, and the real **Blob REST API** (path-style, Azurite-compatible) for Storage.
+real **AMQP 1.0** for Service Bus, and the real **Blob/Queue/Table REST APIs** (path-style,
+Azurite-compatible) for Storage.
 
 ## Features
 
@@ -14,15 +16,25 @@ real **AMQP 1.0** for Service Bus, and the real **Blob REST API** (path-style, A
   the dashboard, right-click for a Quit/Open menu.
 - **Web dashboard** at [http://127.0.0.1:7777](http://127.0.0.1:7777) — create, rename, start/stop, and
   delete resource groups and resources; browse queues and peek/complete/abandon/dead-letter/resubmit
-  messages; global search across resource groups and resources.
+  messages; browse Storage containers/blobs, queues/messages, and tables/entities; global search across
+  resource groups and resources.
 - **Azure Service Bus emulation** — queues with active/scheduled/deferred/dead-lettered message states,
   AMQP 1.0 (plain + TLS) endpoints starting at port `5672`, one emulated namespace per resource.
-- **Azure Storage (Blob) emulation** — containers and block blobs (upload/download/delete/list, metadata),
-  path-style HTTP endpoints starting at port `10000`, one emulated account per resource.
+- **Azure Storage emulation** — a single "Storage" resource covers all three core data services, exactly
+  like a real Storage account or Azurite instance: **Blob** (containers/block blobs - upload/download/
+  delete/list, metadata), **Queue** (create/delete queues, put/get/peek/delete/update messages), and
+  **Table** (create/delete tables, insert/upsert/update/merge/delete entities, query by PartitionKey).
+  Path-style HTTP endpoints on 3 sequential ports starting at `10000` (Blob/Queue/Table), matching
+  Azurite's own port convention.
+- **Application Insights emulation** — captures telemetry via both the classic Breeze ingestion protocol
+  (`APPLICATIONINSIGHTS_CONNECTION_STRING`) and OTLP/HTTP (JSON), with an Aspire-dashboard-style Traces/
+  Structured Logs/Metrics viewing experience.
 - **Auto-persistence** — every resource group is saved as its own JSON file under
   `%APPDATA%/AzLocalDev/groups/{group-id}.json`, kept in sync on every create/rename/delete, and restored
-  automatically on the next launch. Queue/message data is stored separately under
-  `%APPDATA%/AzLocalDev/data/service-bus/{instance-id}.json`.
+  automatically on the next launch. Service Bus queue/message data and Storage Blob container/blob data are
+  each persisted separately under `%APPDATA%/AzLocalDev/data/{service-bus,storage-blob}/{instance-id}.json`.
+  Storage Queue/Table contents and Application Insights telemetry are intentionally **not** persisted - see
+  the relevant crates' doc comments for why.
 
 ## Project layout
 
@@ -35,7 +47,11 @@ This is a Cargo workspace:
 | `emu-servicebus-engine` | `emu/module/servicebus/engine` | Wires core + AMQP into a runnable Service Bus emulator instance, plus its REST API. |
 | `emu-storage-blob-core` | `emu/module/storage/blob/core` | Domain model: containers, blobs — no I/O. |
 | `emu-storage-blob-server` | `emu/module/storage/blob/server` | Blob REST API wire protocol adapter over the core store. |
-| `emu-storage-blob-engine` | `emu/module/storage/blob/engine` | Wires core + HTTP server into a runnable Storage (Blob) emulator instance, plus its REST API. |
+| `emu-storage-queue-core` | `emu/module/storage/queue/core` | Domain model: queues, messages (visibility timeout, pop receipts) — no I/O. |
+| `emu-storage-queue-server` | `emu/module/storage/queue/server` | Queue REST API wire protocol adapter over the core store. |
+| `emu-storage-table-core` | `emu/module/storage/table/core` | Domain model: tables, entities — no I/O. |
+| `emu-storage-table-server` | `emu/module/storage/table/server` | Table REST API (OData JSON) wire protocol adapter over the core store. |
+| `emu-storage-blob-engine` | `emu/module/storage/blob/engine` | The unified `StorageEngine`: wires the Blob/Queue/Table cores + their HTTP servers into one runnable Storage account instance (3 ports), plus its REST API. Crate name kept for compatibility even though it now covers all three services. |
 | `emu-registry` | `emu/services/engine` | Generic `EmulatorEngine`/`EngineRegistry` traits shared by every resource kind. |
 | `emu-web` | `emu/ui/web` | Dashboard REST API, static asset serving, and per-group persistence. |
 | `emu-gui` | `emu/ui/gui` | The tray application binary (`AzLocalDev`), wiring everything together. |
@@ -69,27 +85,27 @@ auth to configure.
 
 Use `ServiceBusConnection` (or whatever name you pick) as the `connection` property on your trigger/binding.
 
-### Blob trigger/binding, or as `AzureWebJobsStorage`
+### Blob/Queue/Table trigger/binding, or as `AzureWebJobsStorage`
 
 ```json
 {
   "IsEncrypted": false,
   "Values": {
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "AzureWebJobsStorage": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=emulator;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10000/devstoreaccount1;TableEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=emulator;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;"
   }
 }
 ```
 
 This works as a drop-in `AzureWebJobsStorage` replacement (same convention as Azurite's
-`UseDevelopmentStorage=true`) for apps using only Blob input/output bindings and the host's own internal
-bookkeeping. `QueueEndpoint`/`TableEndpoint` are included (pointing at the same port as `BlobEndpoint`)
-purely so the connection string parses as a complete storage account - without them, the Functions host's
-`StorageAccountProvider` fails to construct a client at all and logs
-`azure.functions.webjobs.storage: Unhealthy - Unable to create client for AzureWebJobsStorage`, even for
-apps that never touch a queue or table. Actual Queue- and Table-backed features (Durable Functions task
-hubs, blob-trigger polling/retry tracking) are **not** emulated yet - those endpoints only satisfy the
-connection string parser, they don't serve real Queue/Table Storage traffic.
+`UseDevelopmentStorage=true`) - a single "Storage" resource in the dashboard emulates all three core data
+services (Blob/Queue/Table) on 3 sequential ports, so this covers Blob input/output bindings, queue
+triggers/bindings, Table bindings, and the Functions host's own internal bookkeeping (which needs a real
+Queue endpoint for its singleton-lease/timer-schedule storage - a Blob-only connection string used to make
+the host log `azure.functions.webjobs.storage: Unhealthy - Unable to create client for AzureWebJobsStorage`
+even for apps that never touched a queue directly). Durable Functions task hubs (which need both Queue and
+Table) should work for common flows, though this isn't a full implementation of every Table Storage query
+capability - see `emu-storage-table-core`'s doc comment for the one query shape ($filter) it supports.
 
 ### Managed Identity-style connections
 
