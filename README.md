@@ -135,5 +135,6 @@ real Managed Identity (only set them to `managedidentity` when actually deployed
 
 ## Status
 
-This is a development/test emulator, not a clone of the full Azure control plane — see [DESIGN.md](DESIGN.md)
-for the detailed design, goals, and non-goals.
+This is a development/test emulator, not a clone of the full Azure control plane — see
+[docs/DESIGN.md](docs/DESIGN.md) for the detailed design, goals, and non-goals, and
+[docs/SESSION-NOTES.md](docs/SESSION-NOTES.md) for a chronological log of how it got built.
