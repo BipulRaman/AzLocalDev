@@ -26,8 +26,14 @@ pub trait EmulatorEngine: Send + Sync {
     /// Machine-readable identifier for the *type* of resource, e.g. "service-bus". Shared
     /// by every instance created from the same factory.
     fn kind(&self) -> &'static str;
-    /// Human-readable name shown in the dashboard, e.g. "Orders Bus".
-    fn display_name(&self) -> &str;
+    /// Human-readable name shown in the dashboard, e.g. "Orders Bus". Returns an owned
+    /// `String` (rather than `&str`) since implementors store it behind interior mutability
+    /// (e.g. a `Mutex<String>`) to support [`EmulatorEngine::rename`] - a lock guard can't be
+    /// borrowed past the end of the call, so there's no `&str` to hand back.
+    fn display_name(&self) -> String;
+    /// Renames this instance in place. Implementors must accept this being called at any
+    /// time, running or not.
+    fn rename(&self, new_name: &str);
     /// Start the emulator. Must be idempotent (calling it while already running is a no-op).
     async fn start(&self) -> anyhow::Result<()>;
     /// Stop the emulator. Must be idempotent.
@@ -67,7 +73,7 @@ impl EngineSummary {
         Self {
             id: engine.id().to_string(),
             kind: engine.kind().to_string(),
-            display_name: engine.display_name().to_string(),
+            display_name: engine.display_name(),
             group_id,
             running: engine.is_running().await,
             detail: engine.detail().await,
@@ -162,6 +168,18 @@ impl EngineRegistry {
 
     pub fn group_of(&self, engine_id: &str) -> Option<String> {
         self.state.lock().unwrap().engine_groups.get(engine_id).cloned()
+    }
+
+    /// Renames a resource group in place.
+    pub fn rename_group(&self, group_id: &str, new_name: &str) -> anyhow::Result<()> {
+        let mut state = self.state.lock().unwrap();
+        let group = state
+            .groups
+            .iter_mut()
+            .find(|g| g.id == group_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown resource group '{group_id}'"))?;
+        group.name = new_name.to_string();
+        Ok(())
     }
 
     /// Stops and removes every resource inside `group_id`, then removes the group itself.
@@ -334,6 +352,15 @@ impl EngineRegistry {
             .cloned()
     }
 
+    /// Renames an engine instance in place.
+    pub fn rename(&self, id: &str, new_name: &str) -> anyhow::Result<()> {
+        let engine = self
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("unknown engine '{id}'"))?;
+        engine.rename(new_name);
+        Ok(())
+    }
+
     pub async fn summaries(&self) -> Vec<EngineSummary> {
         let engines = self.all();
         let mut out = Vec::with_capacity(engines.len());
@@ -364,7 +391,7 @@ impl EngineRegistry {
             .map(|e| SessionResource {
                 id: e.id().to_string(),
                 kind: e.kind().to_string(),
-                name: e.display_name().to_string(),
+                name: e.display_name(),
                 group_id: self.group_of(e.id()).unwrap_or_default(),
                 config: e.config(),
             })

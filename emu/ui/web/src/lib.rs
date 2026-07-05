@@ -34,12 +34,12 @@ pub struct AppState {
 pub fn dashboard_router(state: AppState) -> Router {
     Router::new()
         .route("/api/engines", get(list_engines).post(create_engine))
-        .route("/api/engines/:id", axum::routing::delete(delete_engine))
+        .route("/api/engines/:id", axum::routing::delete(delete_engine).patch(rename_engine))
         .route("/api/engines/:id/start", post(start_engine))
         .route("/api/engines/:id/stop", post(stop_engine))
         .route("/api/resource-kinds", get(list_resource_kinds))
         .route("/api/resource-groups", get(list_resource_groups).post(create_resource_group))
-        .route("/api/resource-groups/:id", axum::routing::delete(delete_resource_group))
+        .route("/api/resource-groups/:id", axum::routing::delete(delete_resource_group).patch(rename_resource_group))
         .route("/api/resource-groups/:id/start", post(start_resource_group))
         .route("/api/resource-groups/:id/stop", post(stop_resource_group))
         .route("/api/sessions", get(list_sessions).post(save_session))
@@ -132,6 +132,23 @@ async fn delete_engine(
     Ok(StatusCode::OK)
 }
 
+#[derive(Deserialize)]
+struct RenameRequest {
+    name: String,
+}
+
+async fn rename_engine(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<RenameRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    state
+        .registry
+        .rename(&id, req.name.trim())
+        .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
+    Ok(StatusCode::OK)
+}
+
 async fn list_resource_kinds(State(state): State<AppState>) -> Json<Vec<ResourceKind>> {
     Json(state.registry.kinds())
 }
@@ -163,6 +180,18 @@ async fn delete_resource_group(
         .delete_group(&id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(StatusCode::OK)
+}
+
+async fn rename_resource_group(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<RenameRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    state
+        .registry
+        .rename_group(&id, req.name.trim())
+        .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
     Ok(StatusCode::OK)
 }
 

@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>emu-engine</title>
+  <title>Az.Local.Dev</title>
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -12,8 +13,8 @@
 <body>
   <header class="topbar-global">
     <div class="topbar-brand">
-      <span class="topbar-brand-mark">e</span>
-      <span>emu-engine</span>
+      <img class="topbar-brand-mark" src="./icon.svg" alt="" />
+      <span>Az.Local.Dev</span>
     </div>
     <div class="topbar-search">
       <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -26,21 +27,21 @@
       <button class="btn btn-primary btn-block" id="new-resource-btn">+ New resource</button>
 
       <nav class="nav" id="resource-nav">
-        <a href="#" class="nav-item" data-nav="dashboard">
-          <svg viewBox="0 0 20 20" fill="none"><path d="M3 3h6v6H3V3Zm8 0h6v6h-6V3ZM3 11h6v6H3v-6Zm8 0h6v6h-6v-6Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-          Home
-        </a>
         <a href="#" class="nav-item" data-nav="running">
           <svg viewBox="0 0 20 20" fill="none"><path d="M10 2v8l6 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="7.25" stroke="currentColor" stroke-width="1.5"/></svg>
-          Running resources
+          Running Resources
         </a>
-        <div class="nav-group-label">
-          <span>Resource groups</span>
-          <button class="nav-add-btn" id="new-group-btn" title="New resource group">+</button>
-        </div>
-        <div id="group-nav"></div>
-        <div class="nav-group-label">Resource types</div>
+
+        <div class="nav-divider"></div>
+        <a href="#" class="nav-item nav-section-link" data-nav="all-resources">Resources</a>
         <div id="kind-nav"></div>
+
+        <div class="nav-divider"></div>
+        <a href="#" class="nav-item nav-section-link" data-nav="dashboard">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M3 3h6v6H3V3Zm8 0h6v6h-6V3ZM3 11h6v6H3v-6Zm8 0h6v6h-6v-6Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          Resource Group
+        </a>
+        <div id="group-nav"></div>
       </nav>
 
       <div class="sidebar-footer">
@@ -59,7 +60,6 @@
           <div class="view-heading">
             <div>
               <h1>Resource groups</h1>
-              <p class="muted">Organize the resources you emulate locally into groups, just like a real cloud subscription.</p>
             </div>
           </div>
           <div class="command-bar">
@@ -82,12 +82,32 @@
           </div>
         </section>
 
+        <!-- All resources, across every group and type -->
+        <section id="view-all-resources" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1>Resources</h1>
+            </div>
+          </div>
+          <div id="all-resources" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th class="col-toggle"></th><th>Name</th><th>Type</th><th>Resource group</th><th class="col-actions">Details</th><th class="col-actions"></th></tr>
+              </thead>
+              <tbody id="all-resources-body"></tbody>
+            </table>
+          </div>
+          <div id="all-resources-empty" class="empty-state hidden">
+            <p>No resources yet.</p>
+            <button class="btn btn-primary" id="all-resources-new-btn">+ Create your first resource</button>
+          </div>
+        </section>
+
         <!-- All running resources across every group -->
         <section id="view-running" class="view hidden">
           <div class="view-heading">
             <div>
               <h1>Running resources</h1>
-              <p class="muted">Every resource that is currently turned on, across all resource groups.</p>
             </div>
           </div>
           <div id="running-resources" class="az-table-wrap">
@@ -108,7 +128,6 @@
           <div class="view-heading">
             <div>
               <h1 id="kind-title"></h1>
-              <p class="muted">Every resource of this type, across all resource groups.</p>
             </div>
           </div>
           <div id="kind-resources" class="az-table-wrap">
@@ -129,7 +148,6 @@
           <div class="view-heading">
             <div>
               <h1 id="group-title"></h1>
-              <p class="muted">Resources inside this group. Turn them on or off, or open one to inspect what's inside.</p>
             </div>
             <div class="group-toggle">
               <label class="switch switch-lg" title="Enable or disable every resource in this group">
@@ -169,7 +187,6 @@
           <div class="view-heading">
             <div>
               <h1 id="sb-instance-title">Service Bus</h1>
-              <p class="muted">Queues in this namespace. Peek messages without consuming them, or send a test message.</p>
             </div>
           </div>
           <div class="command-bar">
@@ -202,7 +219,6 @@
           <div class="view-heading">
             <div>
               <h1 id="sb-queue-title"></h1>
-              <p class="muted">Sequence numbers, delivery counts and bodies are shown exactly as stored - nothing here is consumed by peeking.</p>
             </div>
           </div>
           <div class="command-bar">
@@ -301,6 +317,21 @@
         <div class="modal-actions">
           <button type="button" class="btn" data-close-modal>Cancel</button>
           <button type="submit" class="btn btn-primary">Send</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Rename dialog (shared by resource groups and individual resources) -->
+  <div class="modal-backdrop hidden" id="modal-rename">
+    <div class="modal">
+      <h2 id="rename-title">Rename</h2>
+      <form id="rename-form">
+        <label for="rename-name">Name</label>
+        <input type="text" id="rename-name" required autocomplete="off" />
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
         </div>
       </form>
     </div>

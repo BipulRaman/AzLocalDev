@@ -72,16 +72,10 @@ body {
   flex-shrink: 0;
 }
 .topbar-brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 26px;
   height: 26px;
-  border-radius: var(--radius-sm);
-  background: var(--primary);
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  text-transform: lowercase;
+  flex-shrink: 0;
 }
 
 .topbar-search {
@@ -122,6 +116,8 @@ body {
 
 .nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 
+.nav-divider { height: 1px; background: var(--border-soft); margin: 12px 6px 4px 6px; }
+
 .nav-group-label {
   display: flex;
   align-items: center;
@@ -131,40 +127,16 @@ body {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-faint);
-  padding: 14px 10px 4px 10px;
+  padding: 6px 10px 4px 10px;
 }
-
-.nav-add-btn {
-  appearance: none;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-muted);
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  line-height: 1;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-transform: none;
-  letter-spacing: normal;
-}
-.nav-add-btn:hover { background: var(--primary-soft); color: var(--primary-soft-text); border-color: var(--primary-soft-text); }
-
-.nav-group { display: flex; flex-direction: column; }
-.nav-children { display: flex; flex-direction: column; margin-left: 14px; border-left: 1px solid var(--border-soft); padding-left: 4px; }
-
-.nav-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 7px 10px;
+  padding: 7px 10px 7px 7px;
   border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
   color: var(--text-muted);
   text-decoration: none;
   font-weight: 500;
@@ -172,8 +144,23 @@ body {
   cursor: pointer;
 }
 .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
-.nav-item:hover { background: var(--bg); color: var(--text); }
-.nav-item.active { background: var(--primary-soft); color: var(--primary-soft-text); font-weight: 600; }
+.nav-item:hover { background: var(--border-soft); color: var(--text); }
+.nav-item.active {
+  background: var(--primary-soft);
+  color: var(--primary-soft-text);
+  border-left-color: var(--primary);
+  font-weight: 600;
+}
+.nav-item.active:hover { background: var(--primary-soft); }
+
+/* "Resource Group" section heading doubles as a clickable link (shows all groups) - give
+   it slightly stronger weight than a normal item so it still reads as a section header. */
+.nav-section-link { font-weight: 700; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); margin-top: 2px; }
+.nav-section-link:hover { color: var(--text); background: var(--border-soft); }
+.nav-section-link.active { color: var(--primary-soft-text); }
+.nav-section-link svg { display: none; }
+
+.nav-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-footer {
   padding: 10px 8px 0 8px;

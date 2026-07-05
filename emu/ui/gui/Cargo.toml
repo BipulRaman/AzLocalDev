@@ -18,3 +18,4 @@ anyhow = { workspace = true }
 tao = "0.30"
 tray-icon = "0.19"
 open = "5"
+resvg = "0.47"

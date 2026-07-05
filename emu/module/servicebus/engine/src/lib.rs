@@ -53,7 +53,7 @@ struct RunningState {
 /// each with its own id, display name, and AMQP port.
 pub struct ServiceBusEngine {
     id: String,
-    name: String,
+    name: StdMutex<String>,
     amqp_port: u16,
     /// The loopback address (`127.0.0.{n}`) this instance's AMQPS listener binds to, on the
     /// fixed `AMQPS_PORT`. Every `127.0.0.x` address is loopback with no hosts file or DNS
@@ -71,7 +71,7 @@ impl ServiceBusEngine {
     pub fn new(id: impl Into<String>, name: impl Into<String>, amqp_port: u16, instance_seq: u8) -> Self {
         Self {
             id: id.into(),
-            name: name.into(),
+            name: StdMutex::new(name.into()),
             amqp_port,
             amqps_host: Ipv4Addr::new(127, 0, 0, instance_seq.max(1)),
             state: Mutex::new(None),
@@ -211,8 +211,12 @@ impl EmulatorEngine for ServiceBusEngine {
         "service-bus"
     }
 
-    fn display_name(&self) -> &str {
-        &self.name
+    fn display_name(&self) -> String {
+        self.name.lock().unwrap().clone()
+    }
+
+    fn rename(&self, new_name: &str) {
+        *self.name.lock().unwrap() = new_name.to_string();
     }
 
     async fn start(&self) -> anyhow::Result<()> {

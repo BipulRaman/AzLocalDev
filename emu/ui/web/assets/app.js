@@ -1,6 +1,6 @@
 // ------------------------------------------------------------------ state
 
-let view = "dashboard"; // dashboard | group | servicebus | queue
+let view = "dashboard"; // dashboard | group | servicebus | queue | running | kind
 let groupCache = [];
 let engineCache = [];
 let kindCache = [];
@@ -13,6 +13,7 @@ let currentState = "active";
 let queueFilter = "";
 let currentKind = null;
 let currentKindName = "";
+let renameTarget = null; // { kind: "group" | "engine", id: string }
 
 const el = (id) => document.getElementById(id);
 
@@ -25,6 +26,7 @@ const ICONS = {
   trash: '<svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   copy: '<svg viewBox="0 0 20 20" fill="none"><rect x="7" y="7" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7" stroke="currentColor" stroke-width="1.5"/></svg>',
   requeue: '<svg viewBox="0 0 20 20" fill="none"><path d="M4 8a6 6 0 0 1 10.4-4.1M16 4v3.5h-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 12a6 6 0 0 1-10.4 4.1M4 16v-3.5h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  edit: '<svg viewBox="0 0 20 20" fill="none"><path d="M12.9 3.9 16.1 7.1M4 16l.7-3.2 8.4-8.4a1.4 1.4 0 0 1 2 0l1.5 1.5a1.4 1.4 0 0 1 0 2L8.2 15.3 4 16Z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
 /** Renders a compact, icon-only action button (with a tooltip + accessible label) for use
@@ -75,6 +77,15 @@ function closeModal(id) {
   el(id).classList.add("hidden");
 }
 
+/** Opens the shared rename dialog pre-filled with `currentName`, remembering what's being
+ * renamed so the submit handler knows which API endpoint to PATCH. */
+function openRenameModal(kind, id, currentName) {
+  renameTarget = { kind, id };
+  el("rename-title").textContent = kind === "group" ? "Rename resource group" : "Rename resource";
+  el("rename-name").value = currentName;
+  openModal("modal-rename");
+}
+
 document.querySelectorAll("[data-close-modal]").forEach((btn) => {
   btn.addEventListener("click", () => btn.closest(".modal-backdrop").classList.add("hidden"));
 });
@@ -114,6 +125,39 @@ el("modal-confirm").addEventListener("click", (ev) => {
   if (ev.target.id === "modal-confirm") settleConfirm(false);
 });
 
+// ----------------------------------------------------------- rename dialog
+
+el("rename-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!renameTarget) return;
+  const input = el("rename-name");
+  const name = input.value.trim();
+  if (!name) return;
+  const { kind, id } = renameTarget;
+  const path = kind === "group" ? `/api/resource-groups/${id}` : `/api/engines/${id}`;
+  try {
+    await api(path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    toast("success", "Renamed");
+    closeModal("modal-rename");
+    renameTarget = null;
+    await refreshAll();
+    if (kind === "group" && currentGroupId === id) {
+      currentGroupName = name;
+      el("group-title").textContent = name;
+    }
+    if (kind === "engine" && currentInstanceId === id) {
+      currentInstanceName = name;
+      el("sb-instance-title").textContent = name;
+    }
+  } catch (err) {
+    toast("error", err.message);
+  }
+});
+
 // -------------------------------------------------------------- breadcrumb
 
 function renderBreadcrumbs() {
@@ -130,6 +174,9 @@ function renderBreadcrumbs() {
   }
   if (view === "running") {
     parts.push({ label: "Running resources", onClick: null });
+  }
+  if (view === "all-resources") {
+    parts.push({ label: "Resources", onClick: null });
   }
   if (view === "kind") {
     parts.push({ label: currentKindName || currentKind, onClick: null });
@@ -159,7 +206,7 @@ function renderBreadcrumbs() {
 
 function showView(name) {
   view = name;
-  ["dashboard", "group", "servicebus", "queue", "running", "kind"].forEach((v) => {
+  ["dashboard", "group", "servicebus", "queue", "running", "kind", "all-resources"].forEach((v) => {
     el(`view-${v}`).classList.toggle("hidden", v !== name);
   });
   renderBreadcrumbs();
@@ -180,6 +227,13 @@ function navRunning() {
   currentInstanceId = null;
   showView("running");
   renderRunningResources();
+}
+
+function navAllResources() {
+  currentGroupId = null;
+  currentInstanceId = null;
+  showView("all-resources");
+  renderAllResources();
 }
 
 function navKind(kind) {
@@ -230,17 +284,21 @@ function navQueue(name) {
 
 function renderSidebarActiveState() {
   document.querySelectorAll(".nav-item").forEach((a) => {
-    const isDashboard = a.dataset.nav === "dashboard";
     const isRunning = a.dataset.nav === "running";
+    const isAllResources = a.dataset.nav === "all-resources";
+    const isDashboard = a.dataset.nav === "dashboard";
     const isGroup = a.dataset.group && a.dataset.group === currentGroupId;
     const isKind = a.dataset.kind && a.dataset.kind === currentKind;
     const groupActive = isGroup && (view === "group" || view === "servicebus" || view === "queue");
+    const dashboardActive = isDashboard && view === "dashboard";
+    // Only the section header itself highlights on its own "all resources" overview page -
+    // when viewing one specific kind, just that child item should light up, mirroring how
+    // "Resource Group" only highlights the specific group (not the section header) when
+    // viewing a group's detail page. Previously both highlighted at once here.
+    const allResourcesActive = isAllResources && view === "all-resources";
     a.classList.toggle(
       "active",
-      (view === "dashboard" && isDashboard) ||
-        (view === "running" && isRunning) ||
-        (view === "kind" && isKind) ||
-        groupActive
+      (view === "running" && isRunning) || allResourcesActive || (view === "kind" && isKind) || groupActive || dashboardActive
     );
   });
 }
@@ -258,43 +316,48 @@ function groupName(groupId) {
 }
 
 function renderSidebar() {
-  const container = el("group-nav");
-  container.innerHTML = "";
-
-  for (const group of groupCache) {
-    const info = groupRunningInfo(group.id);
-    const groupLink = document.createElement("a");
-    groupLink.href = "#";
-    groupLink.className = "nav-item nav-group-link";
-    groupLink.dataset.group = group.id;
-    groupLink.innerHTML = `
-      <span class="dot ${info.any ? "dot-on" : "dot-off"}"></span>
-      <span class="nav-item-label">${group.name}</span>
-    `;
-    groupLink.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      navGroup(group.id);
-    });
-    container.appendChild(groupLink);
-  }
-
   const kindContainer = el("kind-nav");
   kindContainer.innerHTML = "";
   for (const k of kindCache) {
-    const count = engineCache.filter((e) => e.kind === k.kind).length;
+    const ofKind = engineCache.filter((e) => e.kind === k.kind);
+    const count = ofKind.length;
+    const anyRunning = ofKind.some((e) => e.running);
     const kindLink = document.createElement("a");
     kindLink.href = "#";
     kindLink.className = "nav-item nav-group-link";
     kindLink.dataset.kind = k.kind;
+    kindLink.title = `${count} resource${count === 1 ? "" : "s"}, ${ofKind.filter((e) => e.running).length} running`;
     kindLink.innerHTML = `
+      <span class="dot ${anyRunning ? "dot-on" : "dot-off"}"></span>
       <span class="nav-item-label">${k.display_name}</span>
-      <span class="count-chip">${count}</span>
+      <span class="count-chip ${count > 0 ? "has-value" : ""}">${count}</span>
     `;
     kindLink.addEventListener("click", (ev) => {
       ev.preventDefault();
       navKind(k.kind);
     });
     kindContainer.appendChild(kindLink);
+  }
+
+  const groupContainer = el("group-nav");
+  groupContainer.innerHTML = "";
+  for (const group of groupCache) {
+    const info = groupRunningInfo(group.id);
+    const groupLink = document.createElement("a");
+    groupLink.href = "#";
+    groupLink.className = "nav-item nav-group-link";
+    groupLink.dataset.group = group.id;
+    groupLink.title = `${info.total} resource${info.total === 1 ? "" : "s"}, ${info.running} running`;
+    groupLink.innerHTML = `
+      <span class="dot ${info.any ? "dot-on" : "dot-off"}"></span>
+      <span class="nav-item-label">${group.name}</span>
+      <span class="count-chip ${info.total > 0 ? "has-value" : ""}">${info.total}</span>
+    `;
+    groupLink.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      navGroup(group.id);
+    });
+    groupContainer.appendChild(groupLink);
   }
 
   renderSidebarActiveState();
@@ -312,6 +375,7 @@ async function refreshAll() {
   renderSidebar();
   if (view === "dashboard") renderGroupsTable();
   if (view === "group") renderGroupResources();
+  if (view === "all-resources") renderAllResources();
 }
 
 /** Starts or stops every resource inside `groupId` in one call. */
@@ -371,7 +435,12 @@ function renderGroupsTable() {
       <td class="link-cell" data-open-group="${g.id}">${g.name}</td>
       <td>${count} resource${count === 1 ? "" : "s"}</td>
       <td class="mono">${new Date(g.created_at).toLocaleString()}</td>
-      <td class="col-actions">${iconBtn("trash", "Delete", `data-delete-group="${g.id}"`, "icon-btn-danger")}</td>
+      <td class="col-actions">
+        <div class="row-actions">
+          ${iconBtn("edit", "Rename", `data-rename-group="${g.id}"`)}
+          ${iconBtn("trash", "Delete", `data-delete-group="${g.id}"`, "icon-btn-danger")}
+        </div>
+      </td>
     `;
     body.appendChild(tr);
   }
@@ -386,6 +455,14 @@ function renderGroupsTable() {
       const enabled = input.getAttribute("data-enabled") === "true";
       input.disabled = true;
       await setGroupRunning(id, !enabled);
+    });
+  });
+  body.querySelectorAll("[data-rename-group]").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const id = btn.getAttribute("data-rename-group");
+      const group = groupCache.find((g) => g.id === id);
+      openRenameModal("group", id, group ? group.name : "");
     });
   });
   body.querySelectorAll("[data-delete-group]").forEach((btn) => {
@@ -420,7 +497,12 @@ function engineRow(eng) {
     <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
     <td>${typeLabel}</td>
     <td class="col-actions">${iconBtn("info", "View details", `data-details="${eng.id}"`)}</td>
-    <td class="col-actions">${iconBtn("trash", "Delete", `data-delete-engine="${eng.id}"`, "icon-btn-danger")}</td>
+    <td class="col-actions">
+      <div class="row-actions">
+        ${iconBtn("edit", "Rename", `data-rename-engine="${eng.id}"`)}
+        ${iconBtn("trash", "Delete", `data-delete-engine="${eng.id}"`, "icon-btn-danger")}
+      </div>
+    </td>
   `;
   return tr;
 }
@@ -430,6 +512,14 @@ function wireEngineRowEvents(body) {
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
       openDetailsModal(btn.getAttribute("data-details"));
+    });
+  });
+  body.querySelectorAll("[data-rename-engine]").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const id = btn.getAttribute("data-rename-engine");
+      const eng = engineCache.find((e) => e.id === id);
+      openRenameModal("engine", id, eng ? eng.display_name : "");
     });
   });
   body.querySelectorAll("[data-open-resource]").forEach((cell) => {
@@ -610,9 +700,59 @@ function kindRow(eng) {
     <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
     <td class="link-cell" data-open-group-cell="${eng.group_id}">${groupName(eng.group_id)}</td>
     <td class="col-actions">${iconBtn("info", "View details", `data-details="${eng.id}"`)}</td>
-    <td class="col-actions">${iconBtn("trash", "Delete", `data-delete-engine="${eng.id}"`, "icon-btn-danger")}</td>
+    <td class="col-actions">
+      <div class="row-actions">
+        ${iconBtn("edit", "Rename", `data-rename-engine="${eng.id}"`)}
+        ${iconBtn("trash", "Delete", `data-delete-engine="${eng.id}"`, "icon-btn-danger")}
+      </div>
+    </td>
   `;
   return tr;
+}
+
+function allResourcesRow(eng) {
+  const kindInfo = kindCache.find((k) => k.kind === eng.kind);
+  const typeLabel = kindInfo ? kindInfo.display_name : eng.kind;
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td class="col-toggle">
+      <label class="switch" title="${eng.running ? "Stop" : "Start"}">
+        <input type="checkbox" data-toggle="${eng.id}" data-running="${eng.running}" ${eng.running ? "checked" : ""} />
+        <span class="track"></span>
+      </label>
+    </td>
+    <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
+    <td>${typeLabel}</td>
+    <td class="link-cell" data-open-group-cell="${eng.group_id}">${groupName(eng.group_id)}</td>
+    <td class="col-actions">${iconBtn("info", "View details", `data-details="${eng.id}"`)}</td>
+    <td class="col-actions">
+      <div class="row-actions">
+        ${iconBtn("edit", "Rename", `data-rename-engine="${eng.id}"`)}
+        ${iconBtn("trash", "Delete", `data-delete-engine="${eng.id}"`, "icon-btn-danger")}
+      </div>
+    </td>
+  `;
+  return tr;
+}
+
+function renderAllResources() {
+  const body = el("all-resources-body");
+  const empty = el("all-resources-empty");
+  const wrap = el("all-resources");
+  body.innerHTML = "";
+
+  if (engineCache.length === 0) {
+    empty.classList.remove("hidden");
+    wrap.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  wrap.classList.remove("hidden");
+
+  for (const eng of engineCache) {
+    body.appendChild(allResourcesRow(eng));
+  }
+  wireEngineRowEvents(body);
 }
 
 function renderRunningResources() {
@@ -660,7 +800,6 @@ function renderKindResources() {
 
 // ------------------------------------------------------------ new group
 
-el("new-group-btn").addEventListener("click", () => openModal("modal-new-group"));
 el("new-group-btn-2").addEventListener("click", () => openModal("modal-new-group"));
 el("new-group-btn-3").addEventListener("click", () => openModal("modal-new-group"));
 
@@ -918,6 +1057,13 @@ document.querySelectorAll('[data-nav="running"]').forEach((a) => a.addEventListe
   navRunning();
 }));
 
+document.querySelectorAll('[data-nav="all-resources"]').forEach((a) => a.addEventListener("click", (ev) => {
+  ev.preventDefault();
+  navAllResources();
+}));
+
+el("all-resources-new-btn").addEventListener("click", () => openNewResourceModal(null));
+
 el("sb-new-queue-btn").addEventListener("click", () => openModal("modal-new-queue"));
 el("sb-new-queue-btn-2").addEventListener("click", () => openModal("modal-new-queue"));
 
@@ -997,7 +1143,7 @@ loadResourceKinds().then(() => renderSidebar());
 navDashboard();
 
 setInterval(() => {
-  if (view === "dashboard" || view === "group" || view === "running" || view === "kind") refreshAll();
+  if (view === "dashboard" || view === "group" || view === "running" || view === "kind" || view === "all-resources") refreshAll();
   else if (view === "servicebus") loadQueues();
   else if (view === "queue") loadMessages();
 }, 4000);
