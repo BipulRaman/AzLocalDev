@@ -1,9 +1,6 @@
 //! Implements acceptor for a remote sender link
 
-use std::{
-    marker::PhantomData,
-    sync::{atomic::AtomicU32, Arc},
-};
+use std::{marker::PhantomData, sync::Arc};
 
 use fe2o3_amqp_types::{
     messaging::{Target, TargetArchetype},

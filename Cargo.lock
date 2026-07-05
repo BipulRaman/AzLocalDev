@@ -851,7 +851,7 @@ dependencies = [
 
 [[package]]
 name = "emu-dev-cert"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",
@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "emu-gui"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "emu-dev-cert",
@@ -883,28 +883,24 @@ dependencies = [
 
 [[package]]
 name = "emu-registry"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "serde",
  "serde_json",
- "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "emu-servicebus-amqp"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "emu-dev-cert",
  "emu-servicebus-core",
  "fe2o3-amqp",
- "fe2o3-amqp-types",
- "rustls",
- "serde_amqp",
  "tokio",
  "tokio-rustls",
  "tracing",
@@ -913,7 +909,7 @@ dependencies = [
 
 [[package]]
 name = "emu-servicebus-core"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "chrono",
  "dashmap",
@@ -926,7 +922,7 @@ dependencies = [
 
 [[package]]
 name = "emu-servicebus-engine"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -944,27 +940,25 @@ dependencies = [
 
 [[package]]
 name = "emu-storage-blob-core"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "base64",
  "bytes",
  "chrono",
  "dashmap",
  "serde",
- "serde_json",
  "thiserror 1.0.69",
  "uuid",
 ]
 
 [[package]]
 name = "emu-storage-blob-engine"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum",
  "axum-server",
- "chrono",
  "dirs 5.0.1",
  "emu-dev-cert",
  "emu-registry",
@@ -978,26 +972,20 @@ dependencies = [
 
 [[package]]
 name = "emu-storage-blob-server"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "axum",
- "bytes",
  "chrono",
  "emu-storage-blob-core",
- "serde",
- "tokio",
- "tracing",
  "uuid",
 ]
 
 [[package]]
 name = "emu-web"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "axum",
- "chrono",
  "dirs 5.0.1",
  "emu-registry",
  "mime_guess",

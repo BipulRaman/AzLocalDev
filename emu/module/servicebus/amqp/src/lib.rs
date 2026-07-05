@@ -396,12 +396,12 @@ fn set_session_filter_value(source: &mut Source, session_id: &str) {
 ///
 /// How long a receiver link asking for a message session (a specific id, or "next available")
 /// keeps polling before giving up and detaching. This runs in its own spawned task (see the call
-/// site in `handle_connection`), so a slow poll only delays completion of THIS ONE link's attach
-/// - it no longer blocks any other concurrent link's attach on the same AMQP session. Kept
+/// site in `handle_connection`), so a slow poll only delays completion of THIS ONE link's attach,
+/// and no longer blocks any other concurrent link's attach on the same AMQP session. Kept
 /// generous (10 minutes) because a short bound here (previously 5s, run inline and blocking)
 /// made `ServiceBusSessionProcessor`'s idle concurrent "next available session" listener slots
 /// detach/reattach in a tight loop, spamming `Failed to retreive session ID from broker
-/// (GeneralError)` client-side every few seconds even though nothing was actually wrong - there
+/// (GeneralError)` client-side every few seconds even though nothing was actually wrong; there
 /// just wasn't a session to hand out yet.
 const SESSION_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const SESSION_POLL_MAX_ATTEMPTS: u32 = 2_400; // 2_400 * 250ms = 10 minutes
@@ -527,13 +527,15 @@ async fn handle_incoming_sender_link(broker: Broker, mut receiver: Receiver) {
 }
 
 fn amqp_body_to_new_message(message: &Message<Body<Value>>) -> NewMessage {
-    let mut new_msg = NewMessage::default();
-
-    new_msg.body = match message.body.clone() {
+    let body = match message.body.clone() {
         Body::Data(data) => data.into_iter().next().map(|d| d.0.to_vec()).unwrap_or_default(),
         Body::Sequence(_) => Vec::new(),
         Body::Value(v) => format!("{:?}", v.0).into_bytes(),
         Body::Empty => Vec::new(),
+    };
+    let mut new_msg = NewMessage {
+        body,
+        ..Default::default()
     };
 
     if let Some(props) = &message.properties {
@@ -664,8 +666,10 @@ async fn apply_outcome(entity: &EntityHandle, lock_token: uuid::Uuid, outcome: O
 }
 
 fn new_message_to_amqp(msg: &emu_servicebus_core::BrokeredMessage) -> Message<Body<Value>> {
-    let mut props = Properties::default();
-    props.message_id = Some(msg.message_id.clone().into());
+    let mut props = Properties {
+        message_id: Some(msg.message_id.clone().into()),
+        ..Default::default()
+    };
     if let Some(cid) = &msg.correlation_id {
         props.correlation_id = Some(cid.clone().into());
     }

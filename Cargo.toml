@@ -14,7 +14,11 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+# "-dev" marks a local/dev-machine build. The release workflow overwrites this with the real
+# tag version (vX.Y.Z -> X.Y.Z, no suffix) before building, so only official release builds
+# ever report a plain X.Y.Z version - see .github/workflows/release.yml and
+# emu/ui/web/src/update.rs (this is what `/api/version` and the update-checker report).
+version = "0.1.0-dev"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT"

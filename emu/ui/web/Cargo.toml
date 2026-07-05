@@ -15,5 +15,4 @@ tower-http = { version = "0.5", features = ["cors"] }
 rust-embed = "8"
 mime_guess = "2"
 dirs = "5"
-chrono = { workspace = true }
 self_update = { workspace = true }

@@ -52,7 +52,7 @@ impl Default for EntityOptions {
 }
 
 /// A message as submitted by a sender. Not yet assigned a sequence number.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NewMessage {
     pub message_id: Option<String>,
     pub body: Vec<u8>,
@@ -63,22 +63,6 @@ pub struct NewMessage {
     pub properties: HashMap<String, String>,
     pub scheduled_enqueue_time: Option<DateTime<Utc>>,
     pub time_to_live: Option<chrono::Duration>,
-}
-
-impl Default for NewMessage {
-    fn default() -> Self {
-        Self {
-            message_id: None,
-            body: Vec::new(),
-            content_type: None,
-            correlation_id: None,
-            session_id: None,
-            partition_key: None,
-            properties: HashMap::new(),
-            scheduled_enqueue_time: None,
-            time_to_live: None,
-        }
-    }
 }
 
 /// A message as stored inside an entity, once it has been assigned a sequence number.
