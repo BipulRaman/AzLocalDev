@@ -13,7 +13,9 @@
 //! that auth style at all, even though this emulator never validates the token it receives.
 //!
 //! The certificate is generated once and persisted to disk so it keeps the same key across
-//! restarts - once a developer trusts it in their OS certificate store, it stays trusted.
+//! restarts - once a developer trusts it (see [`DevCertificate::trust`]), a marker file next
+//! to it remembers that, so [`DevCertificate::is_trusted`] can report it without re-running
+//! `certutil` (or prompting again) on every subsequent launch.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,6 +39,41 @@ impl DevCertificate {
     pub fn tls_acceptor(&self) -> tokio_rustls::TlsAcceptor {
         tokio_rustls::TlsAcceptor::from(self.server_config.clone())
     }
+
+    /// Whether this exact certificate has already been successfully trusted (tracked via a
+    /// marker file written by [`DevCertificate::trust`] on success, since there's no cheap,
+    /// portable way to query the OS trust store directly).
+    pub fn is_trusted(&self) -> bool {
+        trusted_marker_path().exists()
+    }
+
+    /// Installs this certificate into the current Windows user's Trusted Root store, so TLS
+    /// clients (e.g. the Azure SDK) accept it with zero extra configuration - the same
+    /// one-time step `dotnet dev-certs https --trust` automates for local HTTPS development.
+    /// On success, writes the marker file [`DevCertificate::is_trusted`] checks, so callers
+    /// only need to prompt/attempt this once per certificate (not on every launch).
+    ///
+    /// Callers (the GUI) are expected to ask the user's permission before calling this -
+    /// this crate deliberately never runs it automatically, since silently modifying the
+    /// OS certificate store without asking is surprising behavior for a local dev tool.
+    pub fn trust(&self) -> anyhow::Result<()> {
+        // `-user` scopes this to the current Windows user's store (no admin/UAC needed)
+        // rather than the machine-wide store. `certutil -addstore` is itself idempotent -
+        // re-running it against an already-trusted cert is a harmless no-op.
+        let output = std::process::Command::new("certutil")
+            .args(["-user", "-addstore", "Root"])
+            .arg(&self.cert_path)
+            .output()?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "certutil exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let _ = std::fs::write(trusted_marker_path(), "");
+        Ok(())
+    }
 }
 
 /// Loads the persisted dev certificate/key, generating and persisting a fresh self-signed pair
@@ -57,6 +94,9 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
             let (cert_pem, key_pem) = generate_pem()?;
             std::fs::write(&cert_path, &cert_pem)?;
             std::fs::write(&key_path, &key_pem)?;
+            // A freshly generated cert/key invalidates any previous trust marker - the old
+            // trust (if any) was for a different key and doesn't carry over.
+            let _ = std::fs::remove_file(trusted_marker_path());
             (cert_pem, key_pem)
         }
     };
@@ -67,8 +107,6 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
         .with_no_client_auth()
         .with_single_cert(cert_chain, private_key)?;
 
-    ensure_trusted(&cert_path);
-
     Ok(DevCertificate {
         cert_pem,
         cert_path,
@@ -76,44 +114,10 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
     })
 }
 
-/// Best-effort, idempotent install of the dev certificate into the current Windows user's
-/// Trusted Root store, so TLS clients (e.g. the Azure SDK) accept it with zero extra
-/// configuration - the same one-time step `dotnet dev-certs https --trust` automates for local
-/// HTTPS development. Only ever attempted once per process run; never blocks or fails startup
-/// if it doesn't work (e.g. `certutil` missing, permission denied) - the plain (non-TLS)
-/// listener still works fine either way, and a developer can always run the equivalent
-/// `certutil` command themselves.
-fn ensure_trusted(cert_path: &std::path::Path) {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| match try_trust(cert_path) {
-        Ok(()) => tracing::info!(path = %cert_path.display(), "dev TLS certificate trusted for current user"),
-        Err(err) => tracing::warn!(
-            ?err,
-            path = %cert_path.display(),
-            "could not automatically trust the dev TLS certificate; Managed-Identity-style \
-             (TokenCredential) clients may fail TLS validation until it's trusted manually, e.g. \
-             `certutil -user -addstore Root <path>`"
-        ),
-    });
-}
-
-fn try_trust(cert_path: &std::path::Path) -> anyhow::Result<()> {
-    // `-user` scopes this to the current Windows user's store (no admin/UAC needed) rather
-    // than the machine-wide store. `certutil -addstore` is itself idempotent - re-running it
-    // against an already-trusted cert is a harmless no-op, so no separate "is it already
-    // trusted" check is needed.
-    let output = std::process::Command::new("certutil")
-        .args(["-user", "-addstore", "Root"])
-        .arg(cert_path)
-        .output()?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "certutil exited with {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(())
+/// Marker file written by [`DevCertificate::trust`] on success, so [`DevCertificate::is_trusted`]
+/// doesn't need to repeat that check (or callers to re-prompt) on every launch.
+fn trusted_marker_path() -> PathBuf {
+    cert_dir().join("dev-cert.trusted")
 }
 
 fn generate_pem() -> anyhow::Result<(String, String)> {

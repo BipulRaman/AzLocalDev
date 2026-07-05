@@ -1,3 +1,7 @@
+// This is a tray/background app with no console UI - without this, Rust's default "console"
+// subsystem on Windows would pop up a visible console window every time `emu-engine.exe` runs.
+#![windows_subsystem = "windows"]
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -10,6 +14,7 @@ use emu_servicebus_engine::{ServiceBusEngine, ServiceBusRegistry};
 use emu_storage_blob_engine::{BlobEngine, StorageBlobRegistry};
 use emu_web::AppState;
 
+mod dev_cert_prompt;
 mod icon;
 
 const APP_NAME: &str = "Emu Engine";
@@ -36,6 +41,16 @@ fn open_dashboard() {
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+
+    // Loads (generating on first run) the shared dev TLS certificate used by every
+    // Managed-Identity-capable listener (Service Bus AMQPS, Storage Blob HTTPS), and asks
+    // the user once whether to trust it, instead of each engine silently attempting (and
+    // possibly silently failing) this on its own later. Each engine's own `start()` still
+    // calls `load_or_generate()` itself - that just re-reads these same persisted files.
+    match emu_dev_cert::load_or_generate() {
+        Ok(dev_cert) => dev_cert_prompt::ensure_trusted(&dev_cert),
+        Err(err) => tracing::warn!(?err, "failed to prepare dev TLS certificate"),
+    }
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

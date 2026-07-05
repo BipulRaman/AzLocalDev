@@ -705,7 +705,6 @@ dependencies = [
  "rustls",
  "rustls-pemfile",
  "tokio-rustls",
- "tracing",
 ]
 
 [[package]]
@@ -713,6 +712,7 @@ name = "emu-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "emu-dev-cert",
  "emu-registry",
  "emu-servicebus-engine",
  "emu-storage-blob-engine",
@@ -724,6 +724,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tray-icon",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

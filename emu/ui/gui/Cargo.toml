@@ -11,6 +11,7 @@ path = "src/main.rs"
 emu-registry = { workspace = true }
 emu-servicebus-engine = { workspace = true }
 emu-storage-blob-engine = { workspace = true }
+emu-dev-cert = { workspace = true }
 emu-web = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -20,3 +21,4 @@ tao = "0.30"
 tray-icon = "0.19"
 open = "5"
 resvg = "0.47"
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
