@@ -253,6 +253,60 @@
             </div>
           </div>
         </section>
+
+        <!-- Storage (Blob) instance: container list -->
+        <section id="view-storage-blob" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1 id="blob-instance-title">Storage (Blob)</h1>
+            </div>
+          </div>
+          <div class="command-bar">
+            <button class="cmd-btn cmd-btn-primary" id="blob-new-container-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              New container
+            </button>
+          </div>
+          <div id="blob-containers" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th>Name</th><th>Blobs</th><th>Created</th><th class="col-actions"></th></tr>
+              </thead>
+              <tbody id="blob-containers-body"></tbody>
+            </table>
+          </div>
+          <div id="blob-containers-empty" class="empty-state hidden">
+            <p>No containers yet.</p>
+            <button class="btn btn-primary" id="blob-new-container-btn-2">+ Create your first container</button>
+          </div>
+        </section>
+
+        <!-- Storage (Blob): single container detail -->
+        <section id="view-blob-container" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1 id="blob-container-title"></h1>
+            </div>
+          </div>
+          <div class="command-bar">
+            <button class="cmd-btn cmd-btn-primary" id="blob-upload-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 15V5M5 9l5-5 5 5M4 16h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Upload blob
+            </button>
+            <input type="file" id="blob-upload-input" class="hidden" />
+          </div>
+          <div id="blob-blobs" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th>Name</th><th>Size</th><th>Content type</th><th>Last modified</th><th class="col-actions"></th></tr>
+              </thead>
+              <tbody id="blob-blobs-body"></tbody>
+            </table>
+          </div>
+          <div id="blob-blobs-empty" class="empty-state hidden">
+            <p>No blobs in this container yet.</p>
+          </div>
+        </section>
       </main>
     </div>
   </div>
@@ -264,6 +318,21 @@
       <form id="new-group-form">
         <label for="new-group-name">Name</label>
         <input type="text" id="new-group-name" required autocomplete="off" />
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- New container modal -->
+  <div class="modal-backdrop hidden" id="modal-new-container">
+    <div class="modal">
+      <h2>New container</h2>
+      <form id="new-container-form">
+        <label for="new-container-name">Name</label>
+        <input type="text" id="new-container-name" required autocomplete="off" pattern="[a-z0-9-]+" title="Lowercase letters, numbers, and hyphens only" />
         <div class="modal-actions">
           <button type="button" class="btn" data-close-modal>Cancel</button>
           <button type="submit" class="btn btn-primary">Create</button>

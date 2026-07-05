@@ -1,8 +1,6 @@
 //! AMQP 1.0 protocol adapter. Translates AMQP frames <-> [`emu_servicebus_core::Broker`] commands.
 //! Contains no business logic beyond that translation.
 
-mod dev_cert;
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,7 +22,7 @@ use fe2o3_amqp::types::sasl::{SaslCode, SaslInit, SaslOutcome, SaslResponse};
 use emu_servicebus_core::{Broker, DeliveryMode, EntityHandle, NewMessage};
 use tokio::net::TcpListener;
 
-pub use dev_cert::{load_or_generate as load_or_generate_dev_cert, DevCertificate};
+pub use emu_dev_cert::{load_or_generate as load_or_generate_dev_cert, DevCertificate};
 
 fn message_id_to_string(id: &MessageId) -> String {
     format!("{id:?}")

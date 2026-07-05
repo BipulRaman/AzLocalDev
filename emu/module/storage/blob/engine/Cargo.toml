@@ -1,0 +1,20 @@
+[package]
+name = "emu-storage-blob-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+emu-storage-blob-core = { workspace = true }
+emu-storage-blob-server = { workspace = true }
+emu-registry = { workspace = true }
+emu-dev-cert = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+axum = "0.7"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+dirs = "5"

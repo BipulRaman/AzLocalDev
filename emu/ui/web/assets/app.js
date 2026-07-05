@@ -1,6 +1,6 @@
 // ------------------------------------------------------------------ state
 
-let view = "dashboard"; // dashboard | group | servicebus | queue | running | kind
+let view = "dashboard"; // dashboard | group | servicebus | queue | storage-blob | blob-container | running | kind
 let groupCache = [];
 let engineCache = [];
 let kindCache = [];
@@ -11,6 +11,7 @@ let currentInstanceName = "";
 let currentQueue = null;
 let currentState = "active";
 let queueFilter = "";
+let currentContainerName = null;
 let currentKind = null;
 let currentKindName = "";
 let renameTarget = null; // { kind: "group" | "engine", id: string }
@@ -230,14 +231,17 @@ document.addEventListener("click", (ev) => {
 function renderBreadcrumbs() {
   const bc = el("breadcrumbs");
   const parts = [{ label: "Home", onClick: navDashboard }];
-  if (view === "group" || view === "servicebus" || view === "queue") {
+  if (view === "group" || view === "servicebus" || view === "queue" || view === "storage-blob" || view === "blob-container") {
     parts.push({ label: currentGroupName || currentGroupId, onClick: () => navGroup(currentGroupId) });
   }
-  if (view === "servicebus" || view === "queue") {
+  if (view === "servicebus" || view === "queue" || view === "storage-blob" || view === "blob-container") {
     parts.push({ label: currentInstanceName || currentInstanceId, onClick: () => navInstance(currentInstanceId) });
   }
   if (view === "queue") {
     parts.push({ label: currentQueue, onClick: null });
+  }
+  if (view === "blob-container") {
+    parts.push({ label: currentContainerName, onClick: null });
   }
   if (view === "running") {
     parts.push({ label: "Running resources", onClick: null });
@@ -273,7 +277,7 @@ function renderBreadcrumbs() {
 
 function showView(name) {
   view = name;
-  ["dashboard", "group", "servicebus", "queue", "running", "kind", "all-resources"].forEach((v) => {
+  ["dashboard", "group", "servicebus", "queue", "running", "kind", "all-resources", "storage-blob", "blob-container"].forEach((v) => {
     el(`view-${v}`).classList.toggle("hidden", v !== name);
   });
   renderBreadcrumbs();
@@ -333,6 +337,12 @@ function navInstance(id) {
     const group = groupCache.find((g) => g.id === engine.group_id);
     currentGroupName = group ? group.name : engine.group_id;
   }
+  if (engine && engine.kind === "storage-blob") {
+    el("blob-instance-title").textContent = currentInstanceName;
+    showView("storage-blob");
+    loadContainers();
+    return;
+  }
   el("sb-instance-title").textContent = currentInstanceName;
   showView("servicebus");
   loadQueues();
@@ -345,6 +355,13 @@ function navQueue(name) {
   showView("queue");
   el("sb-queue-title").textContent = name;
   loadMessages();
+}
+
+function navContainer(name) {
+  currentContainerName = name;
+  showView("blob-container");
+  el("blob-container-title").textContent = name;
+  loadBlobs();
 }
 
 // --------------------------------------------------------------- sidebar
@@ -693,14 +710,23 @@ function openDetailsModal(id) {
 
   const fields = parseConnectionDetails(eng.detail);
   if (fields.length > 0) {
-    const managedField = fields.find((f) => f.label === "ManagedIdentityNamespace");
+    // Each resource kind that supports a Managed-Identity-style connection exposes its own
+    // extra field (e.g. Service Bus's `fullyQualifiedNamespace`, Blob's `blobServiceUri`) -
+    // shown with its own label, alongside the regular account-key connection string.
+    const managedIdentityFields = [
+      { label: "ManagedIdentityNamespace", title: "fullyQualifiedNamespace (Managed Identity)" },
+      { label: "ManagedIdentityBlobServiceUri", title: "blobServiceUri (Managed Identity)" },
+    ];
     const connectionString = fields
       .filter((f) => !f.label.startsWith("ManagedIdentity"))
       .map((f) => `${f.label}=${f.value}`)
       .join(";");
     rows += detailsRow("Connection string", connectionString);
-    if (managedField) {
-      rows += detailsRow("fullyQualifiedNamespace (Managed Identity)", managedField.value);
+    for (const { label, title } of managedIdentityFields) {
+      const managedField = fields.find((f) => f.label === label);
+      if (managedField) {
+        rows += detailsRow(title, managedField.value);
+      }
     }
   } else if (eng.detail) {
     rows += detailsRow("Endpoint", eng.detail);
@@ -898,6 +924,54 @@ el("group-delete-btn").addEventListener("click", async () => {
     await api(`/api/resource-groups/${currentGroupId}`, { method: "DELETE" });
     toast("success", "Resource group deleted");
     navDashboard();
+  } catch (err) {
+    toast("error", err.message);
+  }
+});
+
+// ---------------------------------------------------------- new container
+
+el("blob-new-container-btn").addEventListener("click", () => openModal("modal-new-container"));
+el("blob-new-container-btn-2").addEventListener("click", () => openModal("modal-new-container"));
+
+el("new-container-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!currentInstanceId) return;
+  const input = el("new-container-name");
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await api(`/api/storage-blob/${currentInstanceId}/containers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    toast("success", `Container "${name}" created`);
+    input.value = "";
+    closeModal("modal-new-container");
+    await loadContainers();
+  } catch (err) {
+    toast("error", err.message);
+  }
+});
+
+el("blob-upload-btn").addEventListener("click", () => el("blob-upload-input").click());
+
+el("blob-upload-input").addEventListener("change", async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = "";
+  if (!file || !currentInstanceId || !currentContainerName) return;
+  try {
+    await api(
+      `/api/storage-blob/${currentInstanceId}/containers/${currentContainerName}/blobs/${encodeURIComponent(file.name)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      }
+    );
+    toast("success", `Blob "${file.name}" uploaded`);
+    await loadBlobs();
   } catch (err) {
     toast("error", err.message);
   }
@@ -1110,6 +1184,136 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+// -------------------------------------------------------- storage (blob)
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = n / 1024;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i += 1;
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[i]}`;
+}
+
+async function loadContainers() {
+  if (!currentInstanceId) return;
+  let containers;
+  try {
+    containers = await api(`/api/storage-blob/${currentInstanceId}/containers`);
+  } catch (err) {
+    toast("error", `Failed to load containers: ${err.message}`);
+    return;
+  }
+
+  const body = el("blob-containers-body");
+  const empty = el("blob-containers-empty");
+  const wrap = el("blob-containers");
+  body.innerHTML = "";
+
+  if (containers.length === 0) {
+    empty.classList.remove("hidden");
+    wrap.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  wrap.classList.remove("hidden");
+
+  for (const c of containers) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="link-cell" data-open-container="${c.name}">${escapeHtml(c.name)}</td>
+      <td>${c.blob_count}</td>
+      <td class="mono">${new Date(c.created_at).toLocaleString()}</td>
+      <td class="col-actions">
+        <div class="row-actions">
+          ${iconBtn("trash", "Delete", `data-delete-container="${c.name}"`, "icon-btn-danger")}
+        </div>
+      </td>
+    `;
+    body.appendChild(tr);
+  }
+
+  body.querySelectorAll("[data-open-container]").forEach((elm) => {
+    elm.addEventListener("click", () => navContainer(elm.getAttribute("data-open-container")));
+  });
+  body.querySelectorAll("[data-delete-container]").forEach((btn) => {
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const name = btn.getAttribute("data-delete-container");
+      if (!(await confirmDialog(`Delete container "${name}"? All of its blobs will be lost.`))) return;
+      try {
+        await api(`/api/storage-blob/${currentInstanceId}/containers/${name}`, { method: "DELETE" });
+        toast("success", `Container "${name}" deleted`);
+      } catch (err) {
+        toast("error", err.message);
+      }
+      await loadContainers();
+    });
+  });
+}
+
+async function loadBlobs() {
+  if (!currentInstanceId || !currentContainerName) return;
+  let blobs;
+  try {
+    blobs = await api(
+      `/api/storage-blob/${currentInstanceId}/containers/${currentContainerName}/blobs`
+    );
+  } catch (err) {
+    toast("error", `Failed to load blobs: ${err.message}`);
+    return;
+  }
+
+  const body = el("blob-blobs-body");
+  const empty = el("blob-blobs-empty");
+  const wrap = el("blob-blobs");
+  body.innerHTML = "";
+
+  if (blobs.length === 0) {
+    empty.classList.remove("hidden");
+    wrap.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  wrap.classList.remove("hidden");
+
+  for (const b of blobs) {
+    const downloadUrl = `/api/storage-blob/${currentInstanceId}/containers/${currentContainerName}/blobs/${encodeURIComponent(b.name)}`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><a class="mono" href="${downloadUrl}" target="_blank" rel="noopener">${escapeHtml(b.name)}</a></td>
+      <td>${formatBytes(b.content_length)}</td>
+      <td class="mono">${escapeHtml(b.content_type)}</td>
+      <td class="mono">${new Date(b.last_modified).toLocaleString()}</td>
+      <td class="col-actions">
+        <div class="row-actions">
+          ${iconBtn("trash", "Delete", `data-delete-blob="${encodeURIComponent(b.name)}"`, "icon-btn-danger")}
+        </div>
+      </td>
+    `;
+    body.appendChild(tr);
+  }
+
+  body.querySelectorAll("[data-delete-blob]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const name = decodeURIComponent(btn.getAttribute("data-delete-blob"));
+      if (!(await confirmDialog(`Delete blob "${name}"? This cannot be undone.`))) return;
+      try {
+        await api(`/api/storage-blob/${currentInstanceId}/containers/${currentContainerName}/blobs/${encodeURIComponent(name)}`, {
+          method: "DELETE",
+        });
+        toast("success", `Blob "${name}" deleted`);
+      } catch (err) {
+        toast("error", err.message);
+      }
+      await loadBlobs();
+    });
+  });
 }
 
 // ---------------------------------------------------------------- events

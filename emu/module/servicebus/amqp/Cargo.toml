@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 emu-servicebus-core = { workspace = true }
+emu-dev-cert = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
@@ -12,8 +13,5 @@ anyhow = { workspace = true }
 fe2o3-amqp = { version = "0.15", features = ["acceptor", "rustls"] }
 fe2o3-amqp-types = "0.14"
 serde_amqp = "0.14"
-rcgen = "0.13"
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
-rustls-pemfile = "2"
-dirs = "5"

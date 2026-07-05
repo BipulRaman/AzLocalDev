@@ -1,0 +1,15 @@
+[package]
+name = "emu-storage-blob-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+emu-storage-blob-core = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+bytes = { workspace = true }
+uuid = { workspace = true }
+axum = "0.7"

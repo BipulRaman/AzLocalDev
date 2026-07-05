@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 emu-registry = { workspace = true }
 emu-servicebus-engine = { workspace = true }
+emu-storage-blob-engine = { workspace = true }
 emu-web = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

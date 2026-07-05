@@ -7,6 +7,7 @@ use tray_icon::{TrayIconBuilder, TrayIconEvent};
 
 use emu_registry::{EmulatorEngine, EngineRegistry};
 use emu_servicebus_engine::{ServiceBusEngine, ServiceBusRegistry};
+use emu_storage_blob_engine::{BlobEngine, StorageBlobRegistry};
 use emu_web::AppState;
 
 mod icon;
@@ -14,6 +15,7 @@ mod icon;
 const APP_NAME: &str = "Emu Engine";
 const DASHBOARD_ADDR: &str = "127.0.0.1:7777";
 const SERVICE_BUS_AMQP_PORT: u16 = 5672;
+const STORAGE_BLOB_BASE_PORT: u16 = 10000;
 
 fn tray_icon() -> tray_icon::Icon {
     let (rgba, size) = icon::render_rgba(32);
@@ -41,12 +43,15 @@ fn main() -> anyhow::Result<()> {
 
     let registry = EngineRegistry::new();
     let sb_registry = ServiceBusRegistry::new();
+    let blob_registry = StorageBlobRegistry::new();
 
     // Shared with the "service-bus" kind factory below so both it (when creating a brand
     // new instance) and the post-restore bump logic further down (when instances were
     // recreated from a persisted resource group instead) agree on the next free port/seq.
     let next_port = Arc::new(std::sync::atomic::AtomicU16::new(SERVICE_BUS_AMQP_PORT + 1));
     let next_seq = Arc::new(std::sync::atomic::AtomicU8::new(2));
+    // Same idea, for the "storage-blob" kind's HTTP port.
+    let next_blob_port = Arc::new(std::sync::atomic::AtomicU16::new(STORAGE_BLOB_BASE_PORT));
 
     registry.register_kind("service-bus", "Service Bus", {
         // Each instance gets its own `127.0.0.{seq}` loopback address for its AMQPS listener
@@ -77,6 +82,22 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
+    registry.register_kind("storage-blob", "Storage (Blob)", {
+        let next_blob_port = next_blob_port.clone();
+        let blob_registry = blob_registry.clone();
+        move |id, name, config| {
+            let port = config
+                .as_ref()
+                .and_then(|c| c.get("port"))
+                .and_then(|p| p.as_u64())
+                .map(|p| p as u16)
+                .unwrap_or_else(|| next_blob_port.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+            let engine = Arc::new(BlobEngine::new(id, name, port));
+            blob_registry.insert(engine.clone());
+            engine as Arc<dyn EmulatorEngine>
+        }
+    });
+
     // Every resource group is persisted as its own `%APPDATA%/EmuEngine/groups/{id}.json`
     // file (see `emu_web::persist_group`/`load_all_groups`), rewritten on every rename/
     // create/delete - so this restores exactly what was there last time, names and all,
@@ -89,6 +110,9 @@ fn main() -> anyhow::Result<()> {
             next_port.fetch_max(engine.amqp_port() + 1, std::sync::atomic::Ordering::SeqCst);
             let seq = engine.amqps_host().octets()[3];
             next_seq.fetch_max(seq.saturating_add(1), std::sync::atomic::Ordering::SeqCst);
+        }
+        for engine in blob_registry.all() {
+            next_blob_port.fetch_max(engine.port() + 1, std::sync::atomic::Ordering::SeqCst);
         }
     } else {
         // First-ever run (nothing persisted yet): create the same default this app has
@@ -118,7 +142,8 @@ fn main() -> anyhow::Result<()> {
     let addr = DASHBOARD_ADDR.parse()?;
     let router = emu_web::with_static_fallback(
         emu_web::dashboard_router(state)
-            .nest("/api/service-bus", emu_servicebus_engine::router(sb_registry)),
+            .nest("/api/service-bus", emu_servicebus_engine::router(sb_registry))
+            .nest("/api/storage-blob", emu_storage_blob_engine::router(blob_registry)),
     );
     runtime.spawn(async move {
         if let Err(err) = emu_web::serve(addr, router).await {

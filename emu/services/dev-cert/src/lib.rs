@@ -1,15 +1,16 @@
-//! Generates (and persists) a self-signed TLS certificate for `localhost`, used by the AMQPS
-//! listener.
+//! Generates (and persists) a self-signed TLS certificate for `localhost`, shared by every
+//! emulator module that needs a real TLS listener - e.g. the Service Bus AMQPS listener and
+//! the Storage (Blob) HTTPS listener.
 //!
 //! Why this exists: Azure SDK clients only skip TLS when constructed from a *connection
-//! string* carrying `UseDevelopmentEmulator=true` - that's what the plain AMQP listener
-//! (`run_amqp_server`) serves. Clients configured with a `TokenCredential` instead (e.g. to
-//! locally replicate how a deployed Function authenticates via Managed Identity, since real
+//! string* (Service Bus's `UseDevelopmentEmulator=true`, or Blob's plain `http://` endpoint
+//! with an account key). Clients configured with a `TokenCredential` instead (e.g. to
+//! locally replicate how a deployed app authenticates via Managed Identity, since real
 //! managed identity/IMDS isn't reachable outside Azure, developers typically fall back to
 //! `DefaultAzureCredential` picking up their own `az login`/Visual Studio session) always
-//! connect over TLS, with no bypass flag. So an AMQPS listener is required to support that
-//! auth style at all, even though this emulator never validates the token it receives - CBS
-//! `put-token` still unconditionally accepts anything, exactly like the plain listener.
+//! connect over TLS, with no bypass flag - Azure Core's bearer-token auth policy refuses to
+//! attach a token to a non-HTTPS request outright. So a TLS listener is required to support
+//! that auth style at all, even though this emulator never validates the token it receives.
 //!
 //! The certificate is generated once and persisted to disk so it keeps the same key across
 //! restarts - once a developer trusts it in their OS certificate store, it stays trusted.
@@ -19,15 +20,23 @@ use std::sync::Arc;
 
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
-/// A loaded (or freshly generated) self-signed dev certificate, plus a ready-to-use TLS
-/// acceptor built from it.
+/// A loaded (or freshly generated) self-signed dev certificate, plus its parsed TLS server
+/// config, ready for any protocol (raw TLS, HTTPS, ...) to build its own acceptor from.
 pub struct DevCertificate {
     /// PEM-encoded certificate, useful for importing into an OS trust store.
     pub cert_pem: String,
     /// Absolute path the certificate is persisted at, so callers can point a developer at it
     /// (e.g. for a "trust this certificate" action).
     pub cert_path: PathBuf,
-    pub tls_acceptor: tokio_rustls::TlsAcceptor,
+    pub server_config: Arc<rustls::ServerConfig>,
+}
+
+impl DevCertificate {
+    /// Convenience wrapper for protocols (like AMQP) that accept raw TCP streams and want a
+    /// ready-to-use `tokio-rustls` acceptor rather than a bare `rustls::ServerConfig`.
+    pub fn tls_acceptor(&self) -> tokio_rustls::TlsAcceptor {
+        tokio_rustls::TlsAcceptor::from(self.server_config.clone())
+    }
 }
 
 /// Loads the persisted dev certificate/key, generating and persisting a fresh self-signed pair
@@ -57,14 +66,13 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
     let server_config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(cert_chain, private_key)?;
-    let tls_acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
 
     ensure_trusted(&cert_path);
 
     Ok(DevCertificate {
         cert_pem,
         cert_path,
-        tls_acceptor,
+        server_config: Arc::new(server_config),
     })
 }
 
@@ -72,9 +80,9 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
 /// Trusted Root store, so TLS clients (e.g. the Azure SDK) accept it with zero extra
 /// configuration - the same one-time step `dotnet dev-certs https --trust` automates for local
 /// HTTPS development. Only ever attempted once per process run; never blocks or fails startup
-/// if it doesn't work (e.g. `certutil` missing, permission denied) - the plain AMQP listener
-/// still works fine either way, and a developer can always run the equivalent `certutil`
-/// command themselves.
+/// if it doesn't work (e.g. `certutil` missing, permission denied) - the plain (non-TLS)
+/// listener still works fine either way, and a developer can always run the equivalent
+/// `certutil` command themselves.
 fn ensure_trusted(cert_path: &std::path::Path) {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| match try_trust(cert_path) {
@@ -127,7 +135,7 @@ fn parse_key_pem(pem: &str) -> anyhow::Result<PrivateKeyDer<'static>> {
 }
 
 /// Installs `ring` as the process-wide default `rustls` crypto provider. Idempotent - safe to
-/// call from every Service Bus instance's startup path even though only one install can ever
+/// call from every emulator instance's startup path even though only one install can ever
 /// succeed per process.
 fn init_crypto_provider() {
     static ONCE: std::sync::Once = std::sync::Once::new();

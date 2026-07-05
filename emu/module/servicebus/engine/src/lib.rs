@@ -281,9 +281,10 @@ impl EmulatorEngine for ServiceBusEngine {
             Ok(dev_cert) => {
                 let broker_for_tls_task = broker.clone();
                 tracing::info!(path = %dev_cert.cert_path.display(), "using dev TLS certificate for AMQPS listener");
+                let tls_acceptor = dev_cert.tls_acceptor();
                 tokio::spawn(async move {
                     if let Err(err) =
-                        emu_servicebus_amqp::run_amqps_server(broker_for_tls_task, amqps_addr, dev_cert.tls_acceptor).await
+                        emu_servicebus_amqp::run_amqps_server(broker_for_tls_task, amqps_addr, tls_acceptor).await
                     {
                         tracing::error!(?err, "AMQPS server task exited with an error");
                     }
