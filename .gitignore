@@ -1,0 +1,21 @@
+# Cargo build output (this is an application workspace, so Cargo.lock IS committed -
+# only the compiled artifacts under target/ are ignored)
+/target/
+
+# vendor/fe2o3-amqp is an intentionally checked-in, patched dependency (see
+# [patch.crates-io] in Cargo.toml) - do NOT ignore it.
+
+# emu-engine's persisted data (queue/message state, self-signed dev TLS cert) normally
+# lives under %APPDATA%/EmuEngine - only relevant here as a fallback if that resolution
+# ever fails and it lands inside the repo instead.
+/EmuEngine/
+
+# OS cruft
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp

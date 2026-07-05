@@ -1,0 +1,18 @@
+[package]
+name = "sbemu-web"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+sbemu-engine = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["cors"] }
+rust-embed = "8"
+mime_guess = "2"
+dirs = "5"
+chrono = { workspace = true }

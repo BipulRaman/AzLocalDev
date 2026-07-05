@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>emu-engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar-global">
+    <div class="topbar-brand">
+      <span class="topbar-brand-mark">e</span>
+      <span>emu-engine</span>
+    </div>
+    <div class="topbar-search">
+      <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input type="text" placeholder="Search resource groups and resources" disabled />
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <button class="btn btn-primary btn-block" id="new-resource-btn">+ New resource</button>
+
+      <nav class="nav" id="resource-nav">
+        <a href="#" class="nav-item" data-nav="dashboard">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M3 3h6v6H3V3Zm8 0h6v6h-6V3ZM3 11h6v6H3v-6Zm8 0h6v6h-6v-6Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          Home
+        </a>
+        <a href="#" class="nav-item" data-nav="running">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M10 2v8l6 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="7.25" stroke="currentColor" stroke-width="1.5"/></svg>
+          Running resources
+        </a>
+        <div class="nav-group-label">
+          <span>Resource groups</span>
+          <button class="nav-add-btn" id="new-group-btn" title="New resource group">+</button>
+        </div>
+        <div id="group-nav"></div>
+        <div class="nav-group-label">Resource types</div>
+        <div id="kind-nav"></div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="dot dot-live"></span> engine host running
+      </div>
+    </aside>
+
+    <div class="content">
+      <header class="topbar">
+        <nav class="breadcrumbs" id="breadcrumbs" aria-label="Breadcrumb"></nav>
+      </header>
+
+      <main class="view-container">
+        <!-- Home: list of resource groups -->
+        <section id="view-dashboard" class="view">
+          <div class="view-heading">
+            <div>
+              <h1>Resource groups</h1>
+              <p class="muted">Organize the resources you emulate locally into groups, just like a real cloud subscription.</p>
+            </div>
+          </div>
+          <div class="command-bar">
+            <button class="cmd-btn cmd-btn-primary" id="new-group-btn-2">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              New resource group
+            </button>
+          </div>
+          <div id="groups" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th class="col-toggle"></th><th>Name</th><th>Resources</th><th>Created</th><th class="col-actions"></th></tr>
+              </thead>
+              <tbody id="groups-body"></tbody>
+            </table>
+          </div>
+          <div id="groups-empty" class="empty-state hidden">
+            <p>No resource groups yet.</p>
+            <button class="btn btn-primary" id="new-group-btn-3">+ Create your first resource group</button>
+          </div>
+        </section>
+
+        <!-- All running resources across every group -->
+        <section id="view-running" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1>Running resources</h1>
+              <p class="muted">Every resource that is currently turned on, across all resource groups.</p>
+            </div>
+          </div>
+          <div id="running-resources" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th class="col-toggle"></th><th>Name</th><th>Type</th><th>Resource group</th><th class="col-actions">Details</th></tr>
+              </thead>
+              <tbody id="running-resources-body"></tbody>
+            </table>
+          </div>
+          <div id="running-resources-empty" class="empty-state hidden">
+            <p>Nothing is running right now.</p>
+          </div>
+        </section>
+
+        <!-- All resources of one type, across every group -->
+        <section id="view-kind" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1 id="kind-title"></h1>
+              <p class="muted">Every resource of this type, across all resource groups.</p>
+            </div>
+          </div>
+          <div id="kind-resources" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th class="col-toggle"></th><th>Name</th><th>Resource group</th><th class="col-actions">Details</th><th class="col-actions"></th></tr>
+              </thead>
+              <tbody id="kind-resources-body"></tbody>
+            </table>
+          </div>
+          <div id="kind-resources-empty" class="empty-state hidden">
+            <p>No resources of this type yet.</p>
+          </div>
+        </section>
+
+        <!-- Resource group detail: resources inside it -->
+        <section id="view-group" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1 id="group-title"></h1>
+              <p class="muted">Resources inside this group. Turn them on or off, or open one to inspect what's inside.</p>
+            </div>
+            <div class="group-toggle">
+              <label class="switch switch-lg" title="Enable or disable every resource in this group">
+                <input type="checkbox" id="group-toggle-input" />
+                <span class="track"></span>
+              </label>
+              <span id="group-toggle-label" class="group-toggle-label">Disabled</span>
+            </div>
+          </div>
+          <div class="command-bar">
+            <button class="cmd-btn cmd-btn-primary" id="group-new-resource-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              New resource
+            </button>
+            <span class="cmd-divider"></span>
+            <button class="cmd-btn cmd-btn-danger" id="group-delete-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Delete group
+            </button>
+          </div>
+          <div id="group-resources" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th class="col-toggle"></th><th>Name</th><th>Type</th><th class="col-actions">Details</th><th class="col-actions"></th></tr>
+              </thead>
+              <tbody id="group-resources-body"></tbody>
+            </table>
+          </div>
+          <div id="group-resources-empty" class="empty-state hidden">
+            <p>No resources in this group yet.</p>
+            <button class="btn btn-primary" id="group-new-resource-btn-2">+ Create your first resource</button>
+          </div>
+        </section>
+
+        <!-- Service Bus instance: queue list -->
+        <section id="view-servicebus" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1 id="sb-instance-title">Service Bus</h1>
+              <p class="muted">Queues in this namespace. Peek messages without consuming them, or send a test message.</p>
+            </div>
+          </div>
+          <div class="command-bar">
+            <button class="cmd-btn cmd-btn-primary" id="sb-new-queue-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              New queue
+            </button>
+            <span class="cmd-divider"></span>
+            <div class="search-box">
+              <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <input type="text" id="sb-queue-search" placeholder="Filter queues by name…" />
+            </div>
+          </div>
+          <div id="sb-queues" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th>Name</th><th>Active</th><th>Scheduled</th><th>Deferred</th><th>Dead-letter</th><th class="col-actions"></th></tr>
+              </thead>
+              <tbody id="sb-queues-body"></tbody>
+            </table>
+          </div>
+          <div id="sb-queues-empty" class="empty-state hidden">
+            <p>No queues yet.</p>
+            <button class="btn btn-primary" id="sb-new-queue-btn-2">+ Create your first queue</button>
+          </div>
+        </section>
+
+        <!-- Service Bus: single queue detail -->
+        <section id="view-queue" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1 id="sb-queue-title"></h1>
+              <p class="muted">Sequence numbers, delivery counts and bodies are shown exactly as stored - nothing here is consumed by peeking.</p>
+            </div>
+          </div>
+          <div class="command-bar">
+            <button class="cmd-btn cmd-btn-primary" id="sb-send-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M3 10h14M11 4l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Send message
+            </button>
+            <span class="cmd-divider"></span>
+            <button class="cmd-btn cmd-btn-danger" id="sb-purge-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Purge
+            </button>
+          </div>
+
+          <div class="tabs" id="sb-tabs">
+            <button class="tab-btn active" data-state="active">Active</button>
+            <button class="tab-btn" data-state="scheduled">Scheduled</button>
+            <button class="tab-btn" data-state="deferred">Deferred</button>
+            <button class="tab-btn" data-state="deadlettered">Dead-letter</button>
+          </div>
+
+          <div class="table-card">
+            <table id="sb-messages-table">
+              <thead>
+                <tr><th>Seq</th><th>Message Id</th><th>Session</th><th>Enqueued</th><th>Deliveries</th><th>Body</th><th class="col-actions"></th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div id="sb-messages-empty" class="empty-state hidden">
+              <p>No messages in this view.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- New resource group modal -->
+  <div class="modal-backdrop hidden" id="modal-new-group">
+    <div class="modal">
+      <h2>New resource group</h2>
+      <form id="new-group-form">
+        <label for="new-group-name">Name</label>
+        <input type="text" id="new-group-name" required autocomplete="off" />
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- New resource modal -->
+  <div class="modal-backdrop hidden" id="modal-new-resource">
+    <div class="modal">
+      <h2>New resource</h2>
+      <form id="new-resource-form">
+        <label for="new-resource-group">Resource group</label>
+        <select id="new-resource-group"></select>
+        <label for="new-resource-kind">Resource type</label>
+        <select id="new-resource-kind"></select>
+        <label for="new-resource-name">Name</label>
+        <input type="text" id="new-resource-name" required autocomplete="off" />
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- New queue modal -->
+  <div class="modal-backdrop hidden" id="modal-new-queue">
+    <div class="modal">
+      <h2>Create queue</h2>
+      <form id="sb-create-queue-form">
+        <label for="sb-new-queue-name">Queue name</label>
+        <input type="text" id="sb-new-queue-name" required autocomplete="off" />
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Send message modal -->
+  <div class="modal-backdrop hidden" id="modal-send-message">
+    <div class="modal">
+      <h2>Send test message</h2>
+      <form id="sb-send-form">
+        <label for="sb-send-body">Message body</label>
+        <textarea id="sb-send-body" rows="5"></textarea>
+        <label for="sb-send-session-id">Session ID (optional)</label>
+        <input type="text" id="sb-send-session-id" autocomplete="off" />
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Send</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirm dialog -->
+  <div class="modal-backdrop hidden" id="modal-confirm">
+    <div class="modal">
+      <h2 id="confirm-title">Are you sure?</h2>
+      <p id="confirm-message"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="confirm-cancel-btn">Cancel</button>
+        <button type="button" class="btn btn-danger-outline" id="confirm-ok-btn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resource details modal -->
+  <div class="modal-backdrop hidden" id="modal-resource-details">
+    <div class="modal modal-wide">
+      <h2 id="details-title">Resource details</h2>
+      <div class="details-list" id="details-body"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close-modal>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toast-stack"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

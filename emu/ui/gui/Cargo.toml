@@ -1,0 +1,20 @@
+[package]
+name = "sbemu-gui"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "emu-engine"
+path = "src/main.rs"
+
+[dependencies]
+sbemu-engine = { workspace = true }
+sbemu-servicebus-engine = { workspace = true }
+sbemu-web = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+tao = "0.30"
+tray-icon = "0.19"
+open = "5"

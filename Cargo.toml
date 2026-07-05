@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+members = [
+    "emu/module/servicebus/core",
+    "emu/module/servicebus/amqp",
+    "emu/module/servicebus/engine",
+    "emu/services/engine",
+    "emu/ui/web",
+    "emu/ui/gui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+dashmap = "6"
+anyhow = "1"
+thiserror = "1"
+bytes = "1"
+async-trait = "0.1"
+
+sbemu-core = { path = "emu/module/servicebus/core" }
+sbemu-amqp = { path = "emu/module/servicebus/amqp" }
+sbemu-engine = { path = "emu/services/engine" }
+sbemu-servicebus-engine = { path = "emu/module/servicebus/engine" }
+sbemu-web = { path = "emu/ui/web" }
+
+# Locally patched fe2o3-amqp: adds an optional custom delivery-tag override on
+# `Sendable`/`Sender::send`, so we can send AMQP delivery-tags that Azure Service
+# Bus clients can parse as a 16-byte lock-token GUID (the upstream crate only
+# exposes a fixed 4-byte auto-generated tag with no override, and the Azure SDK
+# derives the lock token from the delivery-tag bytes, so it always resolves to
+# an empty GUID otherwise, breaking Complete/Abandon/DeadLetter).
+[patch.crates-io]
+fe2o3-amqp = { path = "vendor/fe2o3-amqp" }
+

@@ -1,0 +1,18 @@
+[package]
+name = "sbemu-servicebus-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+sbemu-core = { workspace = true }
+sbemu-amqp = { workspace = true }
+sbemu-engine = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+axum = "0.7"
+dirs = "5"
