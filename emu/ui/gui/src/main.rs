@@ -10,8 +10,9 @@ use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{TrayIconBuilder, TrayIconEvent};
 
 use emu_registry::{EmulatorEngine, EngineRegistry};
+use emu_appinsights_engine::{AppInsightsEngine, AppInsightsRegistry};
 use emu_servicebus_engine::{ServiceBusEngine, ServiceBusRegistry};
-use emu_storage_blob_engine::{BlobEngine, StorageBlobRegistry};
+use emu_storage_blob_engine::{StorageEngine, StorageRegistry};
 use emu_web::AppState;
 
 mod dev_cert_prompt;
@@ -21,6 +22,7 @@ const APP_NAME: &str = "AzLocalDev";
 const DASHBOARD_ADDR: &str = "127.0.0.1:7777";
 const SERVICE_BUS_AMQP_PORT: u16 = 5672;
 const STORAGE_BLOB_BASE_PORT: u16 = 10000;
+const APP_INSIGHTS_BASE_PORT: u16 = 9500;
 
 fn tray_icon() -> tray_icon::Icon {
     let (rgba, size) = icon::render_rgba(32);
@@ -58,15 +60,19 @@ fn main() -> anyhow::Result<()> {
 
     let registry = EngineRegistry::new();
     let sb_registry = ServiceBusRegistry::new();
-    let blob_registry = StorageBlobRegistry::new();
+    let blob_registry = StorageRegistry::new();
+    let ai_registry = AppInsightsRegistry::new();
 
     // Shared with the "service-bus" kind factory below so both it (when creating a brand
     // new instance) and the post-restore bump logic further down (when instances were
     // recreated from a persisted resource group instead) agree on the next free port/seq.
     let next_port = Arc::new(std::sync::atomic::AtomicU16::new(SERVICE_BUS_AMQP_PORT + 1));
     let next_seq = Arc::new(std::sync::atomic::AtomicU8::new(2));
-    // Same idea, for the "storage-blob" kind's HTTP port.
+    // Same idea, for the "storage" kind's base (Blob) HTTP port - each instance reserves 3
+    // consecutive ports (Blob/Queue/Table).
     let next_blob_port = Arc::new(std::sync::atomic::AtomicU16::new(STORAGE_BLOB_BASE_PORT));
+    // Same idea, for the "app-insights" kind's ingestion HTTP port.
+    let next_ai_port = Arc::new(std::sync::atomic::AtomicU16::new(APP_INSIGHTS_BASE_PORT));
 
     registry.register_kind("service-bus", "Service Bus", {
         // Each instance gets its own `127.0.0.{seq}` loopback address for its AMQPS listener
@@ -97,7 +103,7 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
-    registry.register_kind("storage-blob", "Storage (Blob)", {
+    registry.register_kind("storage", "Storage (Blob + Queue + Table)", {
         let next_blob_port = next_blob_port.clone();
         let blob_registry = blob_registry.clone();
         move |id, name, config| {
@@ -106,9 +112,33 @@ fn main() -> anyhow::Result<()> {
                 .and_then(|c| c.get("port"))
                 .and_then(|p| p.as_u64())
                 .map(|p| p as u16)
-                .unwrap_or_else(|| next_blob_port.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
-            let engine = Arc::new(BlobEngine::new(id, name, port));
+                // Each instance reserves 3 consecutive ports (Blob/Queue/Table, matching
+                // Azurite's convention), so the counter must advance by 3 per instance, not 1.
+                .unwrap_or_else(|| next_blob_port.fetch_add(3, std::sync::atomic::Ordering::SeqCst));
+            let engine = Arc::new(StorageEngine::new(id, name, port));
             blob_registry.insert(engine.clone());
+            engine as Arc<dyn EmulatorEngine>
+        }
+    });
+
+    registry.register_kind("app-insights", "Application Insights", {
+        let next_ai_port = next_ai_port.clone();
+        let ai_registry = ai_registry.clone();
+        move |id, name, config| {
+            let port = config
+                .as_ref()
+                .and_then(|c| c.get("port"))
+                .and_then(|p| p.as_u64())
+                .map(|p| p as u16)
+                .unwrap_or_else(|| next_ai_port.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+            let instrumentation_key = config
+                .as_ref()
+                .and_then(|c| c.get("instrumentation_key"))
+                .and_then(|k| k.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            let engine = Arc::new(AppInsightsEngine::new(id, name, port, instrumentation_key));
+            ai_registry.insert(engine.clone());
             engine as Arc<dyn EmulatorEngine>
         }
     });
@@ -127,7 +157,10 @@ fn main() -> anyhow::Result<()> {
             next_seq.fetch_max(seq.saturating_add(1), std::sync::atomic::Ordering::SeqCst);
         }
         for engine in blob_registry.all() {
-            next_blob_port.fetch_max(engine.port() + 1, std::sync::atomic::Ordering::SeqCst);
+            next_blob_port.fetch_max(engine.port() + 3, std::sync::atomic::Ordering::SeqCst);
+        }
+        for engine in ai_registry.all() {
+            next_ai_port.fetch_max(engine.port() + 1, std::sync::atomic::Ordering::SeqCst);
         }
     } else {
         // First-ever run (nothing persisted yet): create the same default this app has
@@ -158,7 +191,8 @@ fn main() -> anyhow::Result<()> {
     let router = emu_web::with_static_fallback(
         emu_web::dashboard_router(state)
             .nest("/api/service-bus", emu_servicebus_engine::router(sb_registry))
-            .nest("/api/storage-blob", emu_storage_blob_engine::router(blob_registry)),
+            .nest("/api/storage-blob", emu_storage_blob_engine::router(blob_registry))
+            .nest("/api/app-insights", emu_appinsights_engine::router(ai_registry)),
     );
     runtime.spawn(async move {
         if let Err(err) = emu_web::serve(addr, router).await {

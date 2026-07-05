@@ -850,6 +850,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "emu-appinsights-core"
+version = "0.1.0-dev"
+dependencies = [
+ "base64",
+ "chrono",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "emu-appinsights-engine"
+version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "emu-appinsights-core",
+ "emu-registry",
+ "flate2",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http 0.5.2",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "emu-dev-cert"
 version = "0.1.0-dev"
 dependencies = [
@@ -866,6 +894,7 @@ name = "emu-gui"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
+ "emu-appinsights-engine",
  "emu-dev-cert",
  "emu-registry",
  "emu-servicebus-engine",
@@ -878,6 +907,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tray-icon",
+ "uuid",
  "windows-sys 0.61.2",
 ]
 
@@ -964,6 +994,10 @@ dependencies = [
  "emu-registry",
  "emu-storage-blob-core",
  "emu-storage-blob-server",
+ "emu-storage-queue-core",
+ "emu-storage-queue-server",
+ "emu-storage-table-core",
+ "emu-storage-table-server",
  "serde",
  "serde_json",
  "tokio",
@@ -978,6 +1012,50 @@ dependencies = [
  "chrono",
  "emu-storage-blob-core",
  "uuid",
+]
+
+[[package]]
+name = "emu-storage-queue-core"
+version = "0.1.0-dev"
+dependencies = [
+ "chrono",
+ "dashmap",
+ "serde",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "emu-storage-queue-server"
+version = "0.1.0-dev"
+dependencies = [
+ "axum",
+ "chrono",
+ "emu-storage-queue-core",
+ "uuid",
+]
+
+[[package]]
+name = "emu-storage-table-core"
+version = "0.1.0-dev"
+dependencies = [
+ "chrono",
+ "dashmap",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "emu-storage-table-server"
+version = "0.1.0-dev"
+dependencies = [
+ "axum",
+ "chrono",
+ "emu-storage-table-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,0 +1,10 @@
+[package]
+name = "emu-storage-queue-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+emu-storage-queue-core = { workspace = true }
+axum = "0.7"
+chrono = { workspace = true }
+uuid = { workspace = true }

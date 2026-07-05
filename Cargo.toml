@@ -7,6 +7,12 @@ members = [
     "emu/module/storage/blob/core",
     "emu/module/storage/blob/server",
     "emu/module/storage/blob/engine",
+    "emu/module/storage/queue/core",
+    "emu/module/storage/queue/server",
+    "emu/module/storage/table/core",
+    "emu/module/storage/table/server",
+    "emu/module/appinsights/core",
+    "emu/module/appinsights/engine",
     "emu/services/dev-cert",
     "emu/services/engine",
     "emu/ui/web",
@@ -48,6 +54,12 @@ emu-servicebus-engine = { path = "emu/module/servicebus/engine" }
 emu-storage-blob-core = { path = "emu/module/storage/blob/core" }
 emu-storage-blob-server = { path = "emu/module/storage/blob/server" }
 emu-storage-blob-engine = { path = "emu/module/storage/blob/engine" }
+emu-storage-queue-core = { path = "emu/module/storage/queue/core" }
+emu-storage-queue-server = { path = "emu/module/storage/queue/server" }
+emu-storage-table-core = { path = "emu/module/storage/table/core" }
+emu-storage-table-server = { path = "emu/module/storage/table/server" }
+emu-appinsights-core = { path = "emu/module/appinsights/core" }
+emu-appinsights-engine = { path = "emu/module/appinsights/engine" }
 emu-dev-cert = { path = "emu/services/dev-cert" }
 emu-web = { path = "emu/ui/web" }
 

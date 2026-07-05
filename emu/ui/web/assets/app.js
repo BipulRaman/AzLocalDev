@@ -1,6 +1,6 @@
 // ------------------------------------------------------------------ state
 
-let view = "dashboard"; // dashboard | group | servicebus | queue | storage-blob | blob-container | running | kind
+let view = "dashboard"; // dashboard | group | servicebus | queue | storage-blob | blob-container | squeue-detail | stable-detail | app-insights | running | kind
 let groupCache = [];
 let engineCache = [];
 let kindCache = [];
@@ -12,6 +12,11 @@ let currentQueue = null;
 let currentState = "active";
 let queueFilter = "";
 let currentContainerName = null;
+let currentStorageView = "containers"; // containers | queues | tables
+let currentSQueueName = null;
+let currentSTableName = null;
+let currentAiView = "traces"; // traces | trace-detail | logs | metrics | other
+let currentTraceOperationId = null;
 let currentKind = null;
 let currentKindName = "";
 let renameTarget = null; // { kind: "group" | "engine", id: string }
@@ -28,6 +33,7 @@ const ICONS = {
   copy: '<svg viewBox="0 0 20 20" fill="none"><rect x="7" y="7" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7" stroke="currentColor" stroke-width="1.5"/></svg>',
   requeue: '<svg viewBox="0 0 20 20" fill="none"><path d="M4 8a6 6 0 0 1 10.4-4.1M16 4v3.5h-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 12a6 6 0 0 1-10.4 4.1M4 16v-3.5h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   edit: '<svg viewBox="0 0 20 20" fill="none"><path d="M12.9 3.9 16.1 7.1M4 16l.7-3.2 8.4-8.4a1.4 1.4 0 0 1 2 0l1.5 1.5a1.4 1.4 0 0 1 0 2L8.2 15.3 4 16Z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  kebab: '<svg viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="4.5" r="1.4"/><circle cx="10" cy="10" r="1.4"/><circle cx="10" cy="15.5" r="1.4"/></svg>',
 };
 
 /** Renders a compact, icon-only action button (with a tooltip + accessible label) for use
@@ -279,10 +285,10 @@ document.addEventListener("click", (ev) => {
 function renderBreadcrumbs() {
   const bc = el("breadcrumbs");
   const parts = [{ label: "Home", onClick: navDashboard }];
-  if (view === "group" || view === "servicebus" || view === "queue" || view === "storage-blob" || view === "blob-container") {
+  if (view === "group" || view === "servicebus" || view === "queue" || view === "storage-blob" || view === "blob-container" || view === "squeue-detail" || view === "stable-detail" || view === "app-insights") {
     parts.push({ label: currentGroupName || currentGroupId, onClick: () => navGroup(currentGroupId) });
   }
-  if (view === "servicebus" || view === "queue" || view === "storage-blob" || view === "blob-container") {
+  if (view === "servicebus" || view === "queue" || view === "storage-blob" || view === "blob-container" || view === "squeue-detail" || view === "stable-detail" || view === "app-insights") {
     parts.push({ label: currentInstanceName || currentInstanceId, onClick: () => navInstance(currentInstanceId) });
   }
   if (view === "queue") {
@@ -290,6 +296,12 @@ function renderBreadcrumbs() {
   }
   if (view === "blob-container") {
     parts.push({ label: currentContainerName, onClick: null });
+  }
+  if (view === "squeue-detail") {
+    parts.push({ label: currentSQueueName, onClick: null });
+  }
+  if (view === "stable-detail") {
+    parts.push({ label: currentSTableName, onClick: null });
   }
   if (view === "running") {
     parts.push({ label: "Running resources", onClick: null });
@@ -325,9 +337,10 @@ function renderBreadcrumbs() {
 
 function showView(name) {
   view = name;
-  ["dashboard", "group", "servicebus", "queue", "running", "kind", "all-resources", "storage-blob", "blob-container"].forEach((v) => {
+  ["dashboard", "group", "servicebus", "queue", "running", "kind", "all-resources", "storage-blob", "blob-container", "squeue-detail", "stable-detail", "app-insights"].forEach((v) => {
     el(`view-${v}`).classList.toggle("hidden", v !== name);
   });
+  el("detail-panel").classList.add("hidden");
   renderBreadcrumbs();
   renderSidebarActiveState();
 }
@@ -385,10 +398,16 @@ function navInstance(id) {
     const group = groupCache.find((g) => g.id === engine.group_id);
     currentGroupName = group ? group.name : engine.group_id;
   }
-  if (engine && engine.kind === "storage-blob") {
+  if (engine && engine.kind === "storage") {
     el("blob-instance-title").textContent = currentInstanceName;
     showView("storage-blob");
-    loadContainers();
+    showStorageView("containers");
+    return;
+  }
+  if (engine && engine.kind === "app-insights") {
+    el("ai-instance-title").textContent = currentInstanceName;
+    showView("app-insights");
+    showAiView("traces");
     return;
   }
   el("sb-instance-title").textContent = currentInstanceName;
@@ -410,6 +429,34 @@ function navContainer(name) {
   showView("blob-container");
   el("blob-container-title").textContent = name;
   loadBlobs();
+}
+
+/** Switches between the Storage instance's sub-tabs (Containers/Queues/Tables), mirroring
+ * the App Insights instance's `showAiView` pattern, and loads that tab's data. */
+function showStorageView(name) {
+  currentStorageView = name;
+  ["containers", "queues", "tables"].forEach((v) => {
+    el(`storage-view-${v}`).classList.toggle("hidden", v !== name);
+  });
+  document.querySelectorAll("#storage-subnav .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.storageView === name));
+
+  if (name === "containers") loadContainers();
+  else if (name === "queues") loadSQueues();
+  else if (name === "tables") loadSTables();
+}
+
+function navSQueue(name) {
+  currentSQueueName = name;
+  showView("squeue-detail");
+  el("squeue-detail-title").textContent = name;
+  loadSQueueMessages();
+}
+
+function navSTable(name) {
+  currentSTableName = name;
+  showView("stable-detail");
+  el("stable-detail-title").textContent = name;
+  loadSTableEntities();
 }
 
 // --------------------------------------------------------------- sidebar
@@ -758,22 +805,25 @@ function openDetailsModal(id) {
 
   const fields = parseConnectionDetails(eng.detail);
   if (fields.length > 0) {
-    // Each resource kind that supports a Managed-Identity-style connection exposes its own
-    // extra field (e.g. Service Bus's `fullyQualifiedNamespace`, Blob's `blobServiceUri`) -
-    // shown with its own label, alongside the regular account-key connection string.
-    const managedIdentityFields = [
+    // Each resource kind that supports a Managed-Identity-style connection, or an
+    // alternative ingestion protocol (e.g. App Insights' OTLP endpoint), exposes its own
+    // extra field - shown with its own label, alongside the regular connection string.
+    const extraFields = [
       { label: "ManagedIdentityNamespace", title: "fullyQualifiedNamespace (Managed Identity)" },
       { label: "ManagedIdentityBlobServiceUri", title: "blobServiceUri (Managed Identity)" },
+      { label: "OtlpEndpoint", title: "OTLP endpoint (OTEL_EXPORTER_OTLP_ENDPOINT)" },
+      { label: "OtlpProtocol", title: "OTLP protocol (OTEL_EXPORTER_OTLP_PROTOCOL)" },
     ];
+    const extraLabels = new Set(extraFields.map((f) => f.label));
     const connectionString = fields
-      .filter((f) => !f.label.startsWith("ManagedIdentity"))
+      .filter((f) => !extraLabels.has(f.label))
       .map((f) => `${f.label}=${f.value}`)
       .join(";");
     rows += detailsRow("Connection string", connectionString);
-    for (const { label, title } of managedIdentityFields) {
-      const managedField = fields.find((f) => f.label === label);
-      if (managedField) {
-        rows += detailsRow(title, managedField.value);
+    for (const { label, title } of extraFields) {
+      const extraField = fields.find((f) => f.label === label);
+      if (extraField) {
+        rows += detailsRow(title, extraField.value);
       }
     }
   } else if (eng.detail) {
@@ -1020,6 +1070,304 @@ el("blob-upload-input").addEventListener("change", async (ev) => {
     );
     toast("success", `Blob "${file.name}" uploaded`);
     await loadBlobs();
+  } catch (err) {
+    toast("error", err.message);
+  }
+});
+
+// ------------------------------------------------------------ storage queues/tables
+
+document.querySelectorAll("#storage-subnav .tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => showStorageView(btn.dataset.storageView));
+});
+
+el("squeue-new-btn").addEventListener("click", () => openModal("modal-new-squeue"));
+el("squeue-new-btn-2").addEventListener("click", () => openModal("modal-new-squeue"));
+
+el("new-squeue-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!currentInstanceId) return;
+  const input = el("new-squeue-name");
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await api(`/api/storage-blob/${currentInstanceId}/queues`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    toast("success", `Queue "${name}" created`);
+    input.value = "";
+    closeModal("modal-new-squeue");
+    await loadSQueues();
+  } catch (err) {
+    toast("error", err.message);
+  }
+});
+
+async function loadSQueues() {
+  if (!currentInstanceId) return;
+  let queues;
+  try {
+    queues = await api(`/api/storage-blob/${currentInstanceId}/queues`);
+  } catch (err) {
+    toast("error", `Failed to load queues: ${err.message}`);
+    return;
+  }
+
+  const body = el("squeue-list-body");
+  const empty = el("squeue-list-empty");
+  const wrap = el("squeue-list");
+  body.innerHTML = "";
+
+  if (queues.length === 0) {
+    empty.classList.remove("hidden");
+    wrap.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  wrap.classList.remove("hidden");
+
+  for (const q of queues) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="link-cell" data-open-squeue="${encodeURIComponent(q.name)}">${escapeHtml(q.name)}</td>
+      <td>${q.approximate_message_count}</td>
+      <td class="col-actions">${iconBtn("trash", "Delete", `data-delete-squeue="${encodeURIComponent(q.name)}"`, "icon-btn-danger")}</td>
+    `;
+    tr.querySelector("[data-open-squeue]").addEventListener("click", () => navSQueue(q.name));
+    tr.querySelector("[data-delete-squeue]").addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      if (!(await confirmDialog(`Delete queue "${q.name}"? All of its messages will be lost.`))) return;
+      try {
+        await api(`/api/storage-blob/${currentInstanceId}/queues/${q.name}`, { method: "DELETE" });
+        toast("success", `Queue "${q.name}" deleted`);
+      } catch (err) {
+        toast("error", err.message);
+      }
+      await loadSQueues();
+    });
+    body.appendChild(tr);
+  }
+}
+
+async function loadSQueueMessages() {
+  if (!currentInstanceId || !currentSQueueName) return;
+  let messages;
+  try {
+    messages = await api(`/api/storage-blob/${currentInstanceId}/queues/${currentSQueueName}/messages`);
+  } catch (err) {
+    toast("error", `Failed to load messages: ${err.message}`);
+    return;
+  }
+
+  const body = el("squeue-messages-body");
+  const empty = el("squeue-messages-empty");
+  const wrap = el("squeue-messages");
+  body.innerHTML = "";
+
+  if (messages.length === 0) {
+    empty.classList.remove("hidden");
+    wrap.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  wrap.classList.remove("hidden");
+
+  for (const m of messages) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono">${escapeHtml(m.message_id)}</td>
+      <td class="mono">${new Date(m.insertion_time).toLocaleString()}</td>
+      <td class="mono">${new Date(m.expiration_time).toLocaleString()}</td>
+      <td>${m.dequeue_count}</td>
+      <td class="body-cell">${escapeHtml(m.body)}</td>
+    `;
+    body.appendChild(tr);
+  }
+}
+
+el("squeue-send-btn").addEventListener("click", () => openModal("modal-squeue-send"));
+
+el("squeue-send-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!currentInstanceId || !currentSQueueName) return;
+  const input = el("squeue-send-body");
+  const body = input.value;
+  try {
+    await api(`/api/storage-blob/${currentInstanceId}/queues/${currentSQueueName}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    toast("success", "Message sent");
+    input.value = "";
+    closeModal("modal-squeue-send");
+    await loadSQueueMessages();
+  } catch (err) {
+    toast("error", err.message);
+  }
+});
+
+el("squeue-clear-btn").addEventListener("click", async () => {
+  if (!currentInstanceId || !currentSQueueName) return;
+  if (!(await confirmDialog(`Clear all messages from "${currentSQueueName}"?`, { confirmText: "Clear" }))) return;
+  try {
+    await api(`/api/storage-blob/${currentInstanceId}/queues/${currentSQueueName}/messages`, { method: "DELETE" });
+    toast("success", "Queue cleared");
+  } catch (err) {
+    toast("error", err.message);
+  }
+  await loadSQueueMessages();
+});
+
+el("stable-new-btn").addEventListener("click", () => openModal("modal-new-stable"));
+el("stable-new-btn-2").addEventListener("click", () => openModal("modal-new-stable"));
+
+el("new-stable-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!currentInstanceId) return;
+  const input = el("new-stable-name");
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await api(`/api/storage-blob/${currentInstanceId}/tables`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    toast("success", `Table "${name}" created`);
+    input.value = "";
+    closeModal("modal-new-stable");
+    await loadSTables();
+  } catch (err) {
+    toast("error", err.message);
+  }
+});
+
+async function loadSTables() {
+  if (!currentInstanceId) return;
+  let tables;
+  try {
+    tables = await api(`/api/storage-blob/${currentInstanceId}/tables`);
+  } catch (err) {
+    toast("error", `Failed to load tables: ${err.message}`);
+    return;
+  }
+
+  const body = el("stable-list-body");
+  const empty = el("stable-list-empty");
+  const wrap = el("stable-list");
+  body.innerHTML = "";
+
+  if (tables.length === 0) {
+    empty.classList.remove("hidden");
+    wrap.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  wrap.classList.remove("hidden");
+
+  for (const t of tables) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="link-cell" data-open-stable="${encodeURIComponent(t.name)}">${escapeHtml(t.name)}</td>
+      <td>${t.entity_count}</td>
+      <td class="col-actions">${iconBtn("trash", "Delete", `data-delete-stable="${encodeURIComponent(t.name)}"`, "icon-btn-danger")}</td>
+    `;
+    tr.querySelector("[data-open-stable]").addEventListener("click", () => navSTable(t.name));
+    tr.querySelector("[data-delete-stable]").addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      if (!(await confirmDialog(`Delete table "${t.name}"? All of its entities will be lost.`))) return;
+      try {
+        await api(`/api/storage-blob/${currentInstanceId}/tables/${t.name}`, { method: "DELETE" });
+        toast("success", `Table "${t.name}" deleted`);
+      } catch (err) {
+        toast("error", err.message);
+      }
+      await loadSTables();
+    });
+    body.appendChild(tr);
+  }
+}
+
+async function loadSTableEntities() {
+  if (!currentInstanceId || !currentSTableName) return;
+  let entities;
+  try {
+    entities = await api(`/api/storage-blob/${currentInstanceId}/tables/${currentSTableName}/entities`);
+  } catch (err) {
+    toast("error", `Failed to load entities: ${err.message}`);
+    return;
+  }
+
+  const body = el("stable-entities-body");
+  const empty = el("stable-entities-empty");
+  const wrap = el("stable-entities");
+  body.innerHTML = "";
+
+  if (entities.length === 0) {
+    empty.classList.remove("hidden");
+    wrap.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  wrap.classList.remove("hidden");
+
+  for (const e of entities) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono">${escapeHtml(e.partition_key)}</td>
+      <td class="mono">${escapeHtml(e.row_key)}</td>
+      <td class="mono">${new Date(e.timestamp).toLocaleString()}</td>
+      <td class="body-cell">${escapeHtml(JSON.stringify(e.properties))}</td>
+      <td class="col-actions">${iconBtn("trash", "Delete", `data-delete-entity="${encodeURIComponent(e.partition_key)}|${encodeURIComponent(e.row_key)}"`, "icon-btn-danger")}</td>
+    `;
+    tr.querySelector("[data-delete-entity]").addEventListener("click", async () => {
+      if (!(await confirmDialog("Delete this entity?"))) return;
+      try {
+        await api(`/api/storage-blob/${currentInstanceId}/tables/${currentSTableName}/entities/${encodeURIComponent(e.partition_key)}/${encodeURIComponent(e.row_key)}`, {
+          method: "DELETE",
+        });
+        toast("success", "Entity deleted");
+      } catch (err) {
+        toast("error", err.message);
+      }
+      await loadSTableEntities();
+    });
+    body.appendChild(tr);
+  }
+}
+
+el("stable-insert-btn").addEventListener("click", () => openModal("modal-stable-insert"));
+
+el("stable-insert-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!currentInstanceId || !currentSTableName) return;
+  const partitionKey = el("stable-insert-pk").value.trim();
+  const rowKey = el("stable-insert-rk").value.trim();
+  const propsText = el("stable-insert-props").value.trim();
+  let properties = {};
+  if (propsText) {
+    try {
+      properties = JSON.parse(propsText);
+    } catch {
+      toast("error", "Properties must be valid JSON");
+      return;
+    }
+  }
+  try {
+    await api(`/api/storage-blob/${currentInstanceId}/tables/${currentSTableName}/entities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partition_key: partitionKey, row_key: rowKey, properties }),
+    });
+    toast("success", "Entity inserted");
+    el("stable-insert-pk").value = "";
+    el("stable-insert-rk").value = "";
+    el("stable-insert-props").value = "";
+    closeModal("modal-stable-insert");
+    await loadSTableEntities();
   } catch (err) {
     toast("error", err.message);
   }
@@ -1363,6 +1711,501 @@ async function loadBlobs() {
     });
   });
 }
+
+// ------------------------------------------------------- app insights
+
+// Application Insights' `SeverityLevel` only has 5 values (unlike ILogger's 6-value
+// `LogLevel`) - the ApplicationInsightsLoggerProvider maps both `LogLevel.Trace` and
+// `LogLevel.Debug` down to `SeverityLevel.Verbose`, so "Trace" is the closest equivalent
+// label for level 0 here.
+const SEVERITY_LABELS = ["Trace", "Information", "Warning", "Error", "Critical"];
+const SEVERITY_PILL_CLASS = ["pill-muted", "pill-on", "pill-warning", "pill-danger", "pill-danger"];
+
+/** Renders `ms` (milliseconds, possibly fractional) the way the rest of the dashboard
+ * formats durations - `—` when absent, otherwise a compact "Nms"/"Ns" label. */
+function formatDurationMs(ms) {
+  if (ms === null || ms === undefined) return "—";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(2)} s`;
+}
+
+function severityPill(level) {
+  const label = SEVERITY_LABELS[level] ?? "Information";
+  const cls = SEVERITY_PILL_CLASS[level] ?? "pill-on";
+  return `<span class="pill ${cls}">${label}</span>`;
+}
+
+/** Renders a telemetry item's "Trace" column: a link to the distributed operation it
+ * belongs to, or a dash if it was never correlated to one. */
+function traceCell(item) {
+  if (!item.operation_id) return "—";
+  const shortId = item.operation_id.length > 12 ? `${item.operation_id.slice(0, 12)}…` : item.operation_id;
+  return `<span class="link-cell" data-open-trace-cell="${encodeURIComponent(item.operation_id)}">${escapeHtml(shortId)}</span>`;
+}
+
+function wireTraceCells(scope) {
+  scope.querySelectorAll("[data-open-trace-cell]").forEach((elm) => {
+    elm.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openTrace(decodeURIComponent(elm.getAttribute("data-open-trace-cell")));
+    });
+  });
+}
+
+function formatPropValue(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+/** Renders one Name/Value row for the details panel. Values are always shown in full
+ * (wrapped, not truncated) - opening the panel is meant to be a single step that shows
+ * everything at once, with no extra click needed to reveal a truncated field. */
+function kvRow(name, rawValue) {
+  const text = formatPropValue(rawValue);
+  return `<tr><td>${escapeHtml(name)}</td><td class="kv-value">${escapeHtml(text)}</td></tr>`;
+}
+
+/** Renders one name/value section of the details panel (Aspire-dashboard-style "Log
+ * entry"/"Context"/"Resource" groups) - `rows` is an array of `[name, value]` pairs.
+ * Returns an empty string (renders nothing) if every row's value is undefined. Sections are
+ * always expanded by default - the header toggle is just a convenience to collapse a
+ * section you're not interested in, never required to see the rest. */
+function kvSection(title, rows) {
+  const visible = rows.filter(([, v]) => v !== undefined);
+  if (visible.length === 0) return "";
+  const body = visible.map(([name, value]) => kvRow(name, value)).join("");
+  return `
+    <div class="detail-section">
+      <div class="detail-section-header" data-toggle-section>
+        <span>${escapeHtml(title)}</span>
+        <span class="count-chip has-value">${visible.length}</span>
+        <svg viewBox="0 0 20 20" fill="none"><path d="m6 8 4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody>${body}</tbody></table>
+    </div>
+  `;
+}
+
+
+/** Human-readable panel title per telemetry type, matching the Aspire dashboard's generic
+ * "Log entry details" panel title (as opposed to repeating the message text, which already
+ * has its own "Message" row in the "Log entry" section below). */
+const PANEL_TITLES = {
+  request: "Request details",
+  dependency: "Dependency details",
+  exception: "Exception details",
+  trace: "Log entry details",
+  event: "Event details",
+  metric: "Metric details",
+  page_view: "Page view details",
+  availability: "Availability details",
+  other: "Telemetry details",
+};
+
+/** Opens the Aspire-dashboard-style details flyout for one telemetry item: grouped
+ * "Log entry"/"Context"/"Resource" name-value tables (everything fully expanded, nothing
+ * truncated), plus a "Raw JSON" section - a single click is meant to show everything, with
+ * no second click needed to reveal any field. Shared by every App Insights sub-view's row
+ * action. */
+function openDetailPanel(item) {
+  const tags = item.tags || {};
+  const resourceLabel = tags["ai.cloud.role"] || tags["ai.cloud.roleInstance"] || (item.ikey ? item.ikey.slice(0, 8) : "—");
+  const category = item.operation_name || item.item_type;
+
+  el("detail-panel-title").textContent = PANEL_TITLES[item.item_type] || "Telemetry details";
+  el("detail-panel-subtitle").innerHTML = `
+    <span><strong>Category</strong> ${escapeHtml(category)}</span>
+    <span><strong>Resource</strong> ${escapeHtml(resourceLabel)}</span>
+    <span><strong>Timestamp</strong> ${escapeHtml(new Date(item.time || item.received_at).toLocaleString())}</span>
+  `;
+
+  const entryRows = [];
+  if (item.severity !== null && item.severity !== undefined) entryRows.push(["Level", SEVERITY_LABELS[item.severity] ?? item.severity]);
+  entryRows.push(["Message", item.name]);
+  if (item.duration_ms !== null && item.duration_ms !== undefined) entryRows.push(["Duration", formatDurationMs(item.duration_ms)]);
+  if (item.response_code) entryRows.push(["Response code", item.response_code]);
+  if (item.success !== null && item.success !== undefined) entryRows.push(["Success", item.success ? "True" : "False"]);
+  for (const [key, value] of Object.entries(item.properties || {})) {
+    entryRows.push([key, value]);
+  }
+
+  const contextRows = [
+    ["Category", item.operation_name || "—"],
+    ["Item type", item.item_type],
+    ["Operation Id", item.operation_id || "—"],
+  ];
+
+  const resourceRows = [
+    ["Instrumentation key", item.ikey || "—"],
+    ["Cloud role", tags["ai.cloud.role"] || "—"],
+    ["Role instance", tags["ai.cloud.roleInstance"] || "—"],
+    ["SDK version", tags["ai.internal.sdkVersion"] || "—"],
+  ];
+
+  const body = el("detail-panel-body");
+  body.innerHTML =
+    kvSection("Log entry", entryRows) +
+    kvSection("Context", contextRows) +
+    kvSection("Resource", resourceRows) +
+    `<div class="detail-section">
+      <div class="detail-section-header" data-toggle-section>
+        <span>Raw JSON</span>
+        <svg viewBox="0 0 20 20" fill="none"><path d="m6 8 4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <pre class="details-json">${escapeHtml(JSON.stringify(item, null, 2))}</pre>
+    </div>`;
+
+  body.querySelectorAll("[data-toggle-section]").forEach((header) => {
+    header.addEventListener("click", () => header.closest(".detail-section").classList.toggle("collapsed"));
+  });
+
+  el("detail-panel").classList.remove("hidden");
+}
+
+el("detail-panel-close").addEventListener("click", () => el("detail-panel").classList.add("hidden"));
+
+/** Switches between the App Insights instance's sub-views (Traces / Trace detail /
+ * Structured Logs / Metrics / Other), mirroring the Aspire dashboard's tab layout, and
+ * loads that view's data. */
+function showAiView(name) {
+  currentAiView = name;
+  ["traces", "trace-detail", "logs", "metrics", "other"].forEach((v) => {
+    el(`ai-view-${v}`).classList.toggle("hidden", v !== name);
+  });
+  document.querySelectorAll("#ai-subnav .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.aiView === name));
+  el("detail-panel").classList.add("hidden");
+
+  if (name === "traces") loadTraces();
+  else if (name === "logs") loadLogs();
+  else if (name === "metrics") loadMetrics();
+  else if (name === "other") loadOther();
+}
+
+function openTrace(operationId) {
+  currentTraceOperationId = operationId;
+  showAiView("trace-detail");
+  loadTraceDetail();
+}
+
+/** Opens a trace row: if it has no request/dependency spans (a standalone log/exception
+ * with nothing to waterfall), the trace-detail page would just be an empty waterfall with
+ * a single log row underneath - so this skips straight to the details panel for that item
+ * instead of navigating to that mostly-empty page. */
+async function openTraceRow(t) {
+  if (t.span_count > 0) {
+    openTrace(t.operation_id);
+    return;
+  }
+  let items;
+  try {
+    items = await api(`/api/app-insights/${currentInstanceId}/traces/${encodeURIComponent(t.operation_id)}`);
+  } catch (err) {
+    toast("error", `Failed to load trace: ${err.message}`);
+    return;
+  }
+  if (items.length > 0) {
+    openDetailPanel(items[0]);
+  }
+}
+
+async function loadTraces() {
+  if (!currentInstanceId) return;
+  let traces;
+  try {
+    traces = await api(`/api/app-insights/${currentInstanceId}/traces`);
+  } catch (err) {
+    toast("error", `Failed to load traces: ${err.message}`);
+    return;
+  }
+
+  const table = el("ai-traces-table");
+  const body = table.querySelector("tbody");
+  const empty = el("ai-traces-empty");
+  body.innerHTML = "";
+
+  if (traces.length === 0) {
+    empty.classList.remove("hidden");
+    table.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  table.classList.remove("hidden");
+
+  const maxDuration = Math.max(...traces.map((t) => t.duration_ms), 1);
+  for (const t of traces) {
+    const tr = document.createElement("tr");
+    const pct = Math.max((t.duration_ms / maxDuration) * 100, 2);
+    tr.innerHTML = `
+      <td class="mono">${new Date(t.start_time).toLocaleString()}</td>
+      <td class="link-cell" data-open-trace="${encodeURIComponent(t.operation_id)}">
+        ${t.has_error ? '<span class="error-dot"></span>' : ""}${escapeHtml(t.root_name)}
+      </td>
+      <td>${t.span_count}</td>
+      <td>
+        <div class="duration-cell">
+          <div class="duration-bar-track"><div class="duration-bar-fill${t.has_error ? " error" : ""}" style="width:${pct}%"></div></div>
+          <span class="mono">${formatDurationMs(t.duration_ms)}</span>
+        </div>
+      </td>
+      <td class="col-actions"></td>
+    `;
+    tr.querySelector("[data-open-trace]").addEventListener("click", () => openTraceRow(t));
+    body.appendChild(tr);
+  }
+}
+
+el("ai-back-to-traces-btn").addEventListener("click", () => showAiView("traces"));
+
+async function loadTraceDetail() {
+  if (!currentInstanceId || !currentTraceOperationId) return;
+  let items;
+  try {
+    items = await api(`/api/app-insights/${currentInstanceId}/traces/${encodeURIComponent(currentTraceOperationId)}`);
+  } catch (err) {
+    toast("error", `Failed to load trace: ${err.message}`);
+    return;
+  }
+
+  const spans = items.filter((i) => i.item_type === "request" || i.item_type === "dependency");
+  const events = items.filter((i) => i.item_type === "trace" || i.item_type === "exception");
+  const hasError = events.some((i) => i.item_type === "exception") || spans.some((s) => s.success === false);
+
+  const startedAt = (i) => new Date(i.time || i.received_at).getTime();
+  const traceStart = Math.min(...items.map(startedAt));
+  const traceEnd = Math.max(...items.map((i) => startedAt(i) + (i.duration_ms || 0)));
+  const totalDuration = Math.max(traceEnd - traceStart, 1);
+  const root = spans.find((s) => s.item_type === "request") || spans[0];
+  const rootName = root ? root.name : (items[0] && (items[0].operation_id || "Trace"));
+
+  el("ai-trace-summary").innerHTML = `
+    <div class="stat"><span class="stat-label">Name</span><span class="stat-value">${escapeHtml(rootName || "")}</span></div>
+    <div class="stat"><span class="stat-label">Start time</span><span class="stat-value">${new Date(traceStart).toLocaleString()}</span></div>
+    <div class="stat"><span class="stat-label">Duration</span><span class="stat-value">${formatDurationMs(totalDuration)}</span></div>
+    <div class="stat"><span class="stat-label">Spans</span><span class="stat-value">${spans.length}</span></div>
+    <div class="stat"><span class="stat-label">Status</span><span class="stat-value${hasError ? " error" : ""}">${hasError ? "Error" : "Success"}</span></div>
+  `;
+
+  const waterfall = el("ai-waterfall");
+  waterfall.className = "waterfall";
+  waterfall.innerHTML = "";
+  // Root spans (no parent found within this trace) first, then everything else in start-time
+  // order - approximates a depth-first waterfall without needing a full tree structure.
+  const bySpanId = new Map(spans.filter((s) => s.span_id).map((s) => [s.span_id, s]));
+  const depthOf = (span, seen = new Set()) => {
+    if (!span.parent_span_id || seen.has(span.span_id)) return 0;
+    const parent = bySpanId.get(span.parent_span_id);
+    if (!parent) return 0;
+    seen.add(span.span_id);
+    return 1 + depthOf(parent, seen);
+  };
+  const sortedSpans = [...spans].sort((a, b) => startedAt(a) - startedAt(b));
+  for (const span of sortedSpans) {
+    const offsetPct = ((startedAt(span) - traceStart) / totalDuration) * 100;
+    const widthPct = Math.max(((span.duration_ms || 0) / totalDuration) * 100, 0.5);
+    const depth = depthOf(span);
+    const row = document.createElement("div");
+    row.className = "waterfall-row";
+    row.innerHTML = `
+      <div class="waterfall-label" style="padding-left:${depth * 18}px">
+        ${span.success === false ? '<span class="error-dot"></span>' : ""}
+        <span class="waterfall-kind">${span.item_type === "request" ? "Request" : "Dependency"}</span>
+        <span title="${escapeHtml(span.name)}">${escapeHtml(span.name)}</span>
+      </div>
+      <div class="waterfall-track">
+        <div class="waterfall-bar${span.success === false ? " error" : ""}" style="left:${offsetPct}%;width:${widthPct}%"></div>
+      </div>
+      <div class="waterfall-duration">${formatDurationMs(span.duration_ms)}</div>
+    `;
+    row.addEventListener("click", () => openDetailPanel(span));
+    waterfall.appendChild(row);
+  }
+
+  const eventsTable = el("ai-trace-events-table");
+  const eventsBody = eventsTable.querySelector("tbody");
+  const eventsEmpty = el("ai-trace-events-empty");
+  eventsBody.innerHTML = "";
+  if (events.length === 0) {
+    eventsEmpty.classList.remove("hidden");
+    eventsTable.classList.add("hidden");
+  } else {
+    eventsEmpty.classList.add("hidden");
+    eventsTable.classList.remove("hidden");
+    for (const ev of [...events].sort((a, b) => startedAt(a) - startedAt(b))) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="mono">${new Date(ev.time || ev.received_at).toLocaleString()}</td>
+        <td>${ev.item_type === "exception" ? '<span class="pill pill-danger">Exception</span>' : severityPill(ev.severity ?? 1)}</td>
+        <td class="body-cell link-cell" data-open-detail>${escapeHtml(ev.name)}</td>
+        <td class="col-actions">${iconBtn("kebab", "View details", `data-event-detail="${ev.id}"`)}</td>
+      `;
+      tr.querySelector("[data-event-detail]").addEventListener("click", () => openDetailPanel(ev));
+      tr.querySelector("[data-open-detail]").addEventListener("click", () => openDetailPanel(ev));
+      eventsBody.appendChild(tr);
+    }
+  }
+}
+
+async function loadLogs() {
+  if (!currentInstanceId) return;
+  const level = el("ai-log-level-filter").value;
+  const search = el("ai-log-search").value.trim();
+  const params = new URLSearchParams();
+  if (level !== "") params.set("severity", level);
+  if (search) params.set("search", search);
+
+  let logs;
+  try {
+    logs = await api(`/api/app-insights/${currentInstanceId}/logs?${params.toString()}`);
+  } catch (err) {
+    toast("error", `Failed to load structured logs: ${err.message}`);
+    return;
+  }
+
+  const table = el("ai-logs-table");
+  const body = table.querySelector("tbody");
+  const empty = el("ai-logs-empty");
+  body.innerHTML = "";
+
+  if (logs.length === 0) {
+    empty.classList.remove("hidden");
+    table.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  table.classList.remove("hidden");
+
+  for (const log of logs) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${severityPill(log.severity ?? 1)}</td>
+      <td class="mono">${new Date(log.time || log.received_at).toLocaleString()}</td>
+      <td class="body-cell link-cell" data-open-detail>${escapeHtml(log.name)}</td>
+      <td>${traceCell(log)}</td>
+      <td class="col-actions">${iconBtn("kebab", "View details", `data-log-detail="${log.id}"`)}</td>
+    `;
+    tr.querySelector("[data-log-detail]").addEventListener("click", () => openDetailPanel(log));
+    tr.querySelector("[data-open-detail]").addEventListener("click", () => openDetailPanel(log));
+    wireTraceCells(tr);
+    body.appendChild(tr);
+  }
+}
+
+el("ai-log-level-filter").addEventListener("change", () => {
+  if (currentAiView === "logs") loadLogs();
+});
+let logSearchDebounce;
+el("ai-log-search").addEventListener("input", () => {
+  clearTimeout(logSearchDebounce);
+  logSearchDebounce = setTimeout(() => {
+    if (currentAiView === "logs") loadLogs();
+  }, 200);
+});
+
+/** Metric telemetry's actual name/value live in `data.metrics[0]` (an array with one entry
+ * per `TrackMetric` call), not at the envelope's top level - see
+ * `emu-appinsights-core`'s `summary_name()`. */
+function metricValue(item) {
+  const m = item.data && Array.isArray(item.data.metrics) ? item.data.metrics[0] : null;
+  return m && typeof m.value === "number" ? m.value : null;
+}
+
+async function loadMetrics() {
+  if (!currentInstanceId) return;
+  let items;
+  try {
+    items = await api(`/api/app-insights/${currentInstanceId}/items?type=metric`);
+  } catch (err) {
+    toast("error", `Failed to load metrics: ${err.message}`);
+    return;
+  }
+
+  const table = el("ai-metrics-table");
+  const body = table.querySelector("tbody");
+  const empty = el("ai-metrics-empty");
+  body.innerHTML = "";
+
+  if (items.length === 0) {
+    empty.classList.remove("hidden");
+    table.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  table.classList.remove("hidden");
+
+  for (const item of items) {
+    const tr = document.createElement("tr");
+    const value = metricValue(item);
+    tr.innerHTML = `
+      <td class="mono">${new Date(item.time || item.received_at).toLocaleString()}</td>
+      <td class="body-cell link-cell" data-open-detail>${escapeHtml(item.name)}</td>
+      <td class="mono">${value === null ? "—" : value}</td>
+      <td class="col-actions">${iconBtn("kebab", "View details", `data-metric-detail="${item.id}"`)}</td>
+    `;
+    tr.querySelector("[data-metric-detail]").addEventListener("click", () => openDetailPanel(item));
+    tr.querySelector("[data-open-detail]").addEventListener("click", () => openDetailPanel(item));
+    body.appendChild(tr);
+  }
+}
+
+el("ai-other-type-filter").addEventListener("change", () => {
+  if (currentAiView === "other") loadOther();
+});
+
+async function loadOther() {
+  if (!currentInstanceId) return;
+  const type = el("ai-other-type-filter").value;
+  let items;
+  try {
+    items = await api(`/api/app-insights/${currentInstanceId}/items?type=${type}`);
+  } catch (err) {
+    toast("error", `Failed to load telemetry: ${err.message}`);
+    return;
+  }
+
+  const table = el("ai-other-table");
+  const body = table.querySelector("tbody");
+  const empty = el("ai-other-empty");
+  body.innerHTML = "";
+
+  if (items.length === 0) {
+    empty.classList.remove("hidden");
+    table.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  table.classList.remove("hidden");
+
+  for (const item of items) {
+    const tr = document.createElement("tr");
+    const result = item.success === false ? "Failed" : item.success === true ? "Success" : "—";
+    tr.innerHTML = `
+      <td class="mono">${new Date(item.time || item.received_at).toLocaleString()}</td>
+      <td class="body-cell link-cell" data-open-detail>${escapeHtml(item.name)}</td>
+      <td>${escapeHtml(result)}</td>
+      <td class="col-actions">${iconBtn("kebab", "View details", `data-other-detail="${item.id}"`)}</td>
+    `;
+    tr.querySelector("[data-other-detail]").addEventListener("click", () => openDetailPanel(item));
+    tr.querySelector("[data-open-detail]").addEventListener("click", () => openDetailPanel(item));
+    body.appendChild(tr);
+  }
+}
+
+document.querySelectorAll("#ai-subnav .tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => showAiView(btn.dataset.aiView));
+});
+
+el("ai-clear-btn").addEventListener("click", async () => {
+  if (!currentInstanceId) return;
+  if (!(await confirmDialog("Clear all captured telemetry for this instance?", { confirmText: "Clear" }))) return;
+  try {
+    await api(`/api/app-insights/${currentInstanceId}/items`, { method: "DELETE" });
+    toast("success", "Telemetry cleared");
+  } catch (err) {
+    toast("error", err.message);
+  }
+  await loadTraces();
+});
 
 // ---------------------------------------------------------------- events
 

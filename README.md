@@ -76,15 +76,20 @@ Use `ServiceBusConnection` (or whatever name you pick) as the `connection` prope
   "IsEncrypted": false,
   "Values": {
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "AzureWebJobsStorage": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=emulator;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=emulator;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10000/devstoreaccount1;TableEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
   }
 }
 ```
 
 This works as a drop-in `AzureWebJobsStorage` replacement (same convention as Azurite's
 `UseDevelopmentStorage=true`) for apps using only Blob input/output bindings and the host's own internal
-bookkeeping. It does **not** yet cover Queue- or Table-backed features (Durable Functions task hubs,
-blob-trigger polling/retry tracking) - those storage services aren't emulated yet.
+bookkeeping. `QueueEndpoint`/`TableEndpoint` are included (pointing at the same port as `BlobEndpoint`)
+purely so the connection string parses as a complete storage account - without them, the Functions host's
+`StorageAccountProvider` fails to construct a client at all and logs
+`azure.functions.webjobs.storage: Unhealthy - Unable to create client for AzureWebJobsStorage`, even for
+apps that never touch a queue or table. Actual Queue- and Table-backed features (Durable Functions task
+hubs, blob-trigger polling/retry tracking) are **not** emulated yet - those endpoints only satisfy the
+connection string parser, they don't serve real Queue/Table Storage traffic.
 
 ### Managed Identity-style connections
 

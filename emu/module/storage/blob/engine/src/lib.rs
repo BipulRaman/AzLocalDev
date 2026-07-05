@@ -1,8 +1,17 @@
-//! The Azure Storage (Blob) emulator module: owns an `emu_storage_blob_core::BlobStore` +
-//! HTTP listener task speaking the real Blob REST wire protocol (the [`BlobEngine`],
-//! implementing the generic `EmulatorEngine` trait from `emu-registry`), plus this module's
-//! own axum [`router`] exposing the container/blob data API that the dashboard UI nests
-//! under `/api/storage-blob`.
+//! The unified Azure Storage emulator module: owns a Blob store + Queue store + Table
+//! store, each with its own HTTP listener speaking the real respective REST wire protocol
+//! (the [`StorageEngine`], implementing the generic `EmulatorEngine` trait from
+//! `emu-registry`), plus this module's own axum [`router`] exposing the container/blob,
+//! queue/message, and table/entity data APIs that the dashboard UI nests under
+//! `/api/storage-blob` (name kept for backwards compatibility with existing persisted
+//! resource groups - it now covers all three storage services, not just Blob).
+//!
+//! One instance = one emulated Storage *account*, exactly like a real Azure Storage account
+//! or an Azurite instance: three sequential ports starting at the instance's base port
+//! (`base` = Blob, `base+1` = Queue, `base+2` = Table), matching Azurite's own
+//! `10000`/`10001`/`10002` convention. Queue and Table contents are intentionally **not**
+//! persisted to disk across restarts (see `emu-storage-queue-core`'s doc comment for the
+//! rationale) - only Blob data is, same as before this module grew Queue/Table support.
 //!
 //! Follows the same template as `emu-servicebus-engine`: a self-contained crate providing
 //! an `EmulatorEngine` impl + its own API routes, with `emu/services/engine` and
@@ -16,7 +25,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
@@ -28,9 +37,11 @@ use tokio::task::JoinHandle;
 
 use emu_registry::EmulatorEngine;
 use emu_storage_blob_core::{BlobStore, ContainerSummary, CoreError, StoreDump};
+use emu_storage_queue_core::{CoreError as QueueCoreError, MessageView, QueueStore, QueueSummary};
+use emu_storage_table_core::{CoreError as TableCoreError, EntityView, TableStore, TableSummary};
 
-/// How often the running store's state is flushed to disk in the background - the same
-/// crash-safety net `emu-servicebus-engine` uses, since `BlobEngine::stop()` never runs on
+/// How often the running Blob store's state is flushed to disk in the background - the same
+/// crash-safety net `emu-servicebus-engine` uses, since `StorageEngine::stop()` never runs on
 /// an abrupt process exit.
 const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -39,33 +50,44 @@ const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5);
 /// connection string.
 const ACCOUNT_NAME: &str = "devstoreaccount1";
 
-/// Offset added to an instance's plain HTTP port to get its HTTPS port. `TokenCredential`
-/// (Managed-Identity-style) clients always require TLS - Azure Core's bearer-token auth
-/// policy refuses to attach a token to a non-HTTPS request outright - so a second, real TLS
-/// listener is needed alongside the plain HTTP one used for account-key connection strings.
-/// Derived from the HTTP port (rather than tracked separately) so no changes are needed to
-/// the dashboard's port-allocation/collision-avoidance logic.
+/// Offset added to an instance's plain (Blob) HTTP port to get its HTTPS port.
+/// `TokenCredential` (Managed-Identity-style) clients always require TLS - Azure Core's
+/// bearer-token auth policy refuses to attach a token to a non-HTTPS request outright - so a
+/// second, real TLS listener is needed alongside the plain HTTP one used for account-key
+/// connection strings. Derived from the HTTP port (rather than tracked separately) so no
+/// changes are needed to the dashboard's port-allocation/collision-avoidance logic.
 const HTTPS_PORT_OFFSET: u16 = 10000;
+
+/// Offsets added to the instance's base (Blob) port to get its Queue/Table ports - matches
+/// Azurite's fixed `10000`/`10001`/`10002` convention (relative rather than absolute, so
+/// each instance still gets its own free block of 3 ports regardless of its base port).
+const QUEUE_PORT_OFFSET: u16 = 1;
+const TABLE_PORT_OFFSET: u16 = 2;
 
 struct RunningState {
     store: BlobStore,
+    queue_store: QueueStore,
+    table_store: TableStore,
     handle: JoinHandle<()>,
     https_handle: JoinHandle<()>,
+    queue_handle: JoinHandle<()>,
+    table_handle: JoinHandle<()>,
     autosave_handle: JoinHandle<()>,
 }
 
-/// The Storage (Blob) emulator engine: owns a [`BlobStore`] and the HTTP listener task
-/// speaking the Blob REST wire protocol. Each instance is independent - a user can create
-/// several (e.g. "Uploads", "Function App Storage"), each with its own id, display name,
-/// and port.
-pub struct BlobEngine {
+/// The unified Storage emulator engine: owns a [`BlobStore`]/[`QueueStore`]/[`TableStore`]
+/// and the three HTTP listener tasks speaking their respective REST wire protocols. Each
+/// instance is independent - a user can create several (e.g. "Uploads", "Function App
+/// Storage"), each with its own id, display name, and base port (Blob/Queue/Table ports are
+/// derived from it).
+pub struct StorageEngine {
     id: String,
     name: StdMutex<String>,
     port: u16,
     state: Mutex<Option<RunningState>>,
 }
 
-impl BlobEngine {
+impl StorageEngine {
     pub fn new(id: impl Into<String>, name: impl Into<String>, port: u16) -> Self {
         Self {
             id: id.into(),
@@ -85,14 +107,30 @@ impl BlobEngine {
         self.port + HTTPS_PORT_OFFSET
     }
 
+    /// This instance's Queue Storage port - see [`QUEUE_PORT_OFFSET`].
+    pub fn queue_port(&self) -> u16 {
+        self.port + QUEUE_PORT_OFFSET
+    }
+
+    /// This instance's Table Storage port - see [`TABLE_PORT_OFFSET`].
+    pub fn table_port(&self) -> u16 {
+        self.port + TABLE_PORT_OFFSET
+    }
+
     /// Dev-only connection string, ready to drop into `AzureWebJobsStorage`-style app
-    /// settings or an `Azure.Storage.Blobs` `BlobServiceClient` connection string. The
-    /// emulator accepts any credentials, so `AccountKey=emulator` is just a placeholder to
-    /// copy/paste as-is - same philosophy as the Service Bus engine's connection string.
+    /// settings or an `Azure.Storage.Blobs`/`Azure.Storage.Queues`/`Azure.Data.Tables` client
+    /// connection string. The emulator accepts any credentials, so `AccountKey=emulator` is
+    /// just a placeholder to copy/paste as-is - same philosophy as the Service Bus engine's
+    /// connection string. `QueueEndpoint`/`TableEndpoint` point at this instance's real
+    /// Queue/Table listeners (see [`Self::queue_port`]/[`Self::table_port`]) - unlike a
+    /// Blob-only emulator, this is a fully-functional Storage account, not just a
+    /// connection-string-parser-satisfying placeholder.
     pub fn connection_string(&self) -> String {
         format!(
-            "DefaultEndpointsProtocol=http;AccountName={ACCOUNT_NAME};AccountKey=emulator;BlobEndpoint=http://127.0.0.1:{}/{ACCOUNT_NAME};",
-            self.port
+            "DefaultEndpointsProtocol=http;AccountName={ACCOUNT_NAME};AccountKey=emulator;BlobEndpoint=http://127.0.0.1:{}/{ACCOUNT_NAME};QueueEndpoint=http://127.0.0.1:{}/{ACCOUNT_NAME};TableEndpoint=http://127.0.0.1:{}/{ACCOUNT_NAME}",
+            self.port,
+            self.queue_port(),
+            self.table_port()
         )
     }
 
@@ -102,11 +140,11 @@ impl BlobEngine {
     }
 
     /// The blob service endpoint a `TokenCredential`-based client (the local stand-in for
-    /// Managed Identity - see [`BlobEngine::managed_identity_config`]) should point at, e.g.
+    /// Managed Identity - see [`StorageEngine::managed_identity_config`]) should point at, e.g.
     /// `BlobServiceClient(new Uri(...), new DefaultAzureCredential())`, or the
     /// `AzureWebJobsStorage__blobServiceUri` app setting for an identity-based Functions host
-    /// storage connection. Unlike [`BlobEngine::blob_service_uri`], this must be `https://` on
-    /// the dedicated [`BlobEngine::https_port`] - Azure Core's bearer-token auth policy
+    /// storage connection. Unlike [`StorageEngine::blob_service_uri`], this must be `https://` on
+    /// the dedicated [`StorageEngine::https_port`] - Azure Core's bearer-token auth policy
     /// refuses to send a token over plain HTTP.
     pub fn https_blob_service_uri(&self) -> String {
         format!("https://127.0.0.1:{}/{ACCOUNT_NAME}", self.https_port())
@@ -133,6 +171,18 @@ impl BlobEngine {
     /// can query container/blob contents.
     pub async fn store(&self) -> Option<BlobStore> {
         self.state.lock().await.as_ref().map(|s| s.store.clone())
+    }
+
+    /// Returns the live [`QueueStore`] if the engine is currently running, so the dashboard
+    /// can query queue/message contents.
+    pub async fn queue_store(&self) -> Option<QueueStore> {
+        self.state.lock().await.as_ref().map(|s| s.queue_store.clone())
+    }
+
+    /// Returns the live [`TableStore`] if the engine is currently running, so the dashboard
+    /// can query table/entity contents.
+    pub async fn table_store(&self) -> Option<TableStore> {
+        self.state.lock().await.as_ref().map(|s| s.table_store.clone())
     }
 
     /// The on-disk file this instance's container/blob data is persisted to, under
@@ -207,13 +257,13 @@ async fn save_store_state(store: &BlobStore, path: &StdPath, id: &str) {
 }
 
 #[async_trait]
-impl EmulatorEngine for BlobEngine {
+impl EmulatorEngine for StorageEngine {
     fn id(&self) -> &str {
         &self.id
     }
 
     fn kind(&self) -> &'static str {
-        "storage-blob"
+        "storage"
     }
 
     fn display_name(&self) -> String {
@@ -245,6 +295,29 @@ impl EmulatorEngine for BlobEngine {
         let handle = tokio::spawn(async move {
             if let Err(err) = axum::serve(listener, router).await {
                 tracing::error!(?err, "Storage (Blob) server task exited with an error");
+            }
+        });
+
+        // Queue and Table contents aren't persisted (see the crate-level doc comment), so
+        // each start is always a fresh, empty store - unlike Blob, there's no dump to
+        // restore here.
+        let queue_store = QueueStore::new();
+        let queue_addr: SocketAddr = format!("127.0.0.1:{}", self.queue_port()).parse()?;
+        let queue_listener = tokio::net::TcpListener::bind(queue_addr).await?;
+        let queue_router = emu_storage_queue_server::router(queue_store.clone());
+        let queue_handle = tokio::spawn(async move {
+            if let Err(err) = axum::serve(queue_listener, queue_router).await {
+                tracing::error!(?err, "Storage (Queue) server task exited with an error");
+            }
+        });
+
+        let table_store = TableStore::new();
+        let table_addr: SocketAddr = format!("127.0.0.1:{}", self.table_port()).parse()?;
+        let table_listener = tokio::net::TcpListener::bind(table_addr).await?;
+        let table_router = emu_storage_table_server::router(table_store.clone());
+        let table_handle = tokio::spawn(async move {
+            if let Err(err) = axum::serve(table_listener, table_router).await {
+                tracing::error!(?err, "Storage (Table) server task exited with an error");
             }
         });
 
@@ -287,11 +360,21 @@ impl EmulatorEngine for BlobEngine {
             }
         });
 
-        tracing::info!(port = self.port, https_port = self.https_port(), "Storage (Blob) emulator started");
+        tracing::info!(
+            port = self.port,
+            https_port = self.https_port(),
+            queue_port = self.queue_port(),
+            table_port = self.table_port(),
+            "Storage emulator started"
+        );
         *guard = Some(RunningState {
             store,
+            queue_store,
+            table_store,
             handle,
             https_handle,
+            queue_handle,
+            table_handle,
             autosave_handle,
         });
         Ok(())
@@ -304,7 +387,9 @@ impl EmulatorEngine for BlobEngine {
             save_store_state(&state.store, &self.data_file(), &self.id).await;
             state.handle.abort();
             state.https_handle.abort();
-            tracing::info!("Storage (Blob) emulator stopped");
+            state.queue_handle.abort();
+            state.table_handle.abort();
+            tracing::info!("Storage emulator stopped");
         }
         Ok(())
     }
@@ -336,21 +421,21 @@ impl EmulatorEngine for BlobEngine {
 
 // --------------------------------------------------------------- web routes
 
-/// Thread-safe lookup table of `instance id -> BlobEngine`, used by this module's axum
+/// Thread-safe lookup table of `instance id -> StorageEngine`, used by this module's axum
 /// routes to resolve which instance a request is for (see [`router`]). Kept separate from
 /// the generic [`emu_registry::EngineRegistry`] so route handlers can call
-/// `BlobEngine`-specific methods directly without downcasting.
+/// `StorageEngine`-specific methods directly without downcasting.
 #[derive(Clone, Default)]
-pub struct StorageBlobRegistry {
-    inner: Arc<StdMutex<HashMap<String, Arc<BlobEngine>>>>,
+pub struct StorageRegistry {
+    inner: Arc<StdMutex<HashMap<String, Arc<StorageEngine>>>>,
 }
 
-impl StorageBlobRegistry {
+impl StorageRegistry {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn insert(&self, engine: Arc<BlobEngine>) {
+    pub fn insert(&self, engine: Arc<StorageEngine>) {
         self.inner.lock().unwrap().insert(engine.id().to_string(), engine);
     }
 
@@ -358,29 +443,27 @@ impl StorageBlobRegistry {
         self.inner.lock().unwrap().remove(id);
     }
 
-    pub fn get(&self, id: &str) -> Option<Arc<BlobEngine>> {
+    pub fn get(&self, id: &str) -> Option<Arc<StorageEngine>> {
         self.inner.lock().unwrap().get(id).cloned()
     }
 
     /// Every currently-registered Storage (Blob) instance - used at startup to bump the
     /// dashboard's port counter past whatever was just restored from a saved group, so
     /// newly-created instances afterward can't collide with restored ones.
-    pub fn all(&self) -> Vec<Arc<BlobEngine>> {
+    pub fn all(&self) -> Vec<Arc<StorageEngine>> {
         self.inner.lock().unwrap().values().cloned().collect()
     }
 }
 
-fn require_engine(registry: &StorageBlobRegistry, id: &str) -> Result<Arc<BlobEngine>, (StatusCode, String)> {
-    registry
-        .get(id)
-        .ok_or((StatusCode::NOT_FOUND, format!("unknown Storage (Blob) instance '{id}'")))
+fn require_engine(registry: &StorageRegistry, id: &str) -> Result<Arc<StorageEngine>, (StatusCode, String)> {
+    registry.get(id).ok_or((StatusCode::NOT_FOUND, format!("unknown Storage instance '{id}'")))
 }
 
-/// This module's own axum router (container/blob data API), keyed by instance id so the
-/// dashboard UI can address any number of Storage (Blob) instances the user has created.
-/// The dashboard UI mounts this under a path prefix (e.g. `/api/storage-blob`) - route paths
-/// here are relative to that.
-pub fn router(registry: StorageBlobRegistry) -> Router {
+/// This module's own axum router (container/blob, queue/message, and table/entity data
+/// APIs), keyed by instance id so the dashboard UI can address any number of Storage
+/// instances the user has created. The dashboard UI mounts this under a path prefix (e.g.
+/// `/api/storage-blob`) - route paths here are relative to that.
+pub fn router(registry: StorageRegistry) -> Router {
     Router::new()
         .route("/:id/containers", get(list_containers).post(create_container))
         .route("/:id/containers/:name", axum::routing::delete(delete_container))
@@ -389,11 +472,24 @@ pub fn router(registry: StorageBlobRegistry) -> Router {
             "/:id/containers/:name/blobs/*blob",
             get(download_blob).put(upload_blob).delete(delete_blob),
         )
+        .route("/:id/queues", get(list_queues).post(create_queue))
+        .route("/:id/queues/:name", axum::routing::delete(delete_queue))
+        .route(
+            "/:id/queues/:name/messages",
+            get(peek_queue_messages).post(send_queue_message).delete(clear_queue_messages),
+        )
+        .route("/:id/tables", get(list_tables).post(create_table))
+        .route("/:id/tables/:name", axum::routing::delete(delete_table))
+        .route("/:id/tables/:name/entities", get(query_table_entities).post(insert_table_entity))
+        .route(
+            "/:id/tables/:name/entities/:partition_key/:row_key",
+            axum::routing::delete(delete_table_entity),
+        )
         .with_state(registry)
 }
 
 async fn list_containers(
-    State(registry): State<StorageBlobRegistry>,
+    State(registry): State<StorageRegistry>,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<ContainerSummary>>, (StatusCode, String)> {
     let engine = require_engine(&registry, &id)?;
@@ -407,7 +503,7 @@ struct CreateContainerBody {
 }
 
 async fn create_container(
-    State(registry): State<StorageBlobRegistry>,
+    State(registry): State<StorageRegistry>,
     Path(id): Path<String>,
     Json(body): Json<CreateContainerBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
@@ -423,7 +519,7 @@ async fn create_container(
 }
 
 async fn delete_container(
-    State(registry): State<StorageBlobRegistry>,
+    State(registry): State<StorageRegistry>,
     Path((id, name)): Path<(String, String)>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let engine = require_engine(&registry, &id)?;
@@ -436,7 +532,7 @@ async fn delete_container(
 }
 
 async fn list_blobs(
-    State(registry): State<StorageBlobRegistry>,
+    State(registry): State<StorageRegistry>,
     Path((id, name)): Path<(String, String)>,
 ) -> Result<Response, (StatusCode, String)> {
     let engine = require_engine(&registry, &id)?;
@@ -449,7 +545,7 @@ async fn list_blobs(
 }
 
 async fn download_blob(
-    State(registry): State<StorageBlobRegistry>,
+    State(registry): State<StorageRegistry>,
     Path((id, container, blob)): Path<(String, String, String)>,
 ) -> Result<Response, (StatusCode, String)> {
     let engine = require_engine(&registry, &id)?;
@@ -469,7 +565,7 @@ async fn download_blob(
 }
 
 async fn upload_blob(
-    State(registry): State<StorageBlobRegistry>,
+    State(registry): State<StorageRegistry>,
     Path((id, container, blob)): Path<(String, String, String)>,
     headers: axum::http::HeaderMap,
     body: axum::body::Bytes,
@@ -488,7 +584,7 @@ async fn upload_blob(
 }
 
 async fn delete_blob(
-    State(registry): State<StorageBlobRegistry>,
+    State(registry): State<StorageRegistry>,
     Path((id, container, blob)): Path<(String, String, String)>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let engine = require_engine(&registry, &id)?;
@@ -500,3 +596,178 @@ async fn delete_blob(
         Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
     }
 }
+
+// ----------------------------------------------------------------- queues
+
+async fn list_queues(State(registry): State<StorageRegistry>, Path(id): Path<String>) -> Result<Json<Vec<QueueSummary>>, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.queue_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    Ok(Json(store.list_queues()))
+}
+
+#[derive(Deserialize)]
+struct CreateQueueBody {
+    name: String,
+}
+
+async fn create_queue(
+    State(registry): State<StorageRegistry>,
+    Path(id): Path<String>,
+    Json(body): Json<CreateQueueBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.queue_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.create_queue(&body.name) {
+        Ok(()) => Ok(StatusCode::CREATED),
+        Err(QueueCoreError::QueueAlreadyExists(name)) => Err((StatusCode::CONFLICT, format!("queue '{name}' already exists"))),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
+async fn delete_queue(State(registry): State<StorageRegistry>, Path((id, name)): Path<(String, String)>) -> Result<StatusCode, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.queue_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.delete_queue(&name) {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(QueueCoreError::QueueNotFound(name)) => Err((StatusCode::NOT_FOUND, format!("queue '{name}' not found"))),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
+/// Dashboard "browse messages" - always a peek (never actually dequeues/leases anything),
+/// same philosophy as the Azure Portal's own queue browser.
+async fn peek_queue_messages(
+    State(registry): State<StorageRegistry>,
+    Path((id, name)): Path<(String, String)>,
+) -> Result<Json<Vec<MessageView>>, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.queue_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.peek_messages(&name, 32) {
+        Ok(messages) => Ok(Json(messages)),
+        Err(QueueCoreError::QueueNotFound(name)) => Err((StatusCode::NOT_FOUND, format!("queue '{name}' not found"))),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
+#[derive(Deserialize)]
+struct SendMessageBody {
+    body: String,
+}
+
+async fn send_queue_message(
+    State(registry): State<StorageRegistry>,
+    Path((id, name)): Path<(String, String)>,
+    Json(body): Json<SendMessageBody>,
+) -> Result<Json<MessageView>, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.queue_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.put_message(&name, body.body, 0, None) {
+        Ok(message) => Ok(Json(message)),
+        Err(QueueCoreError::QueueNotFound(name)) => Err((StatusCode::NOT_FOUND, format!("queue '{name}' not found"))),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
+async fn clear_queue_messages(State(registry): State<StorageRegistry>, Path((id, name)): Path<(String, String)>) -> Result<StatusCode, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.queue_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.clear_messages(&name) {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(QueueCoreError::QueueNotFound(name)) => Err((StatusCode::NOT_FOUND, format!("queue '{name}' not found"))),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
+// ----------------------------------------------------------------- tables
+
+async fn list_tables(State(registry): State<StorageRegistry>, Path(id): Path<String>) -> Result<Json<Vec<TableSummary>>, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.table_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    Ok(Json(store.list_tables()))
+}
+
+#[derive(Deserialize)]
+struct CreateTableBody {
+    name: String,
+}
+
+async fn create_table(
+    State(registry): State<StorageRegistry>,
+    Path(id): Path<String>,
+    Json(body): Json<CreateTableBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.table_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.create_table(&body.name) {
+        Ok(()) => Ok(StatusCode::CREATED),
+        Err(TableCoreError::TableAlreadyExists(name)) => Err((StatusCode::CONFLICT, format!("table '{name}' already exists"))),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
+async fn delete_table(State(registry): State<StorageRegistry>, Path((id, name)): Path<(String, String)>) -> Result<StatusCode, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.table_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.delete_table(&name) {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(TableCoreError::TableNotFound(name)) => Err((StatusCode::NOT_FOUND, format!("table '{name}' not found"))),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
+#[derive(Deserialize)]
+struct EntityQuery {
+    partition_key: Option<String>,
+}
+
+async fn query_table_entities(
+    State(registry): State<StorageRegistry>,
+    Path((id, name)): Path<(String, String)>,
+    Query(query): Query<EntityQuery>,
+) -> Result<Json<Vec<EntityView>>, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.table_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.query_entities(&name, query.partition_key.as_deref()) {
+        Ok(entities) => Ok(Json(entities)),
+        Err(TableCoreError::TableNotFound(name)) => Err((StatusCode::NOT_FOUND, format!("table '{name}' not found"))),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
+#[derive(Deserialize)]
+struct InsertEntityBody {
+    partition_key: String,
+    row_key: String,
+    #[serde(default)]
+    properties: serde_json::Map<String, serde_json::Value>,
+}
+
+async fn insert_table_entity(
+    State(registry): State<StorageRegistry>,
+    Path((id, name)): Path<(String, String)>,
+    Json(body): Json<InsertEntityBody>,
+) -> Result<Json<EntityView>, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.table_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.insert_entity(&name, &body.partition_key, &body.row_key, body.properties) {
+        Ok(entity) => Ok(Json(entity)),
+        Err(TableCoreError::TableNotFound(name)) => Err((StatusCode::NOT_FOUND, format!("table '{name}' not found"))),
+        Err(TableCoreError::EntityAlreadyExists) => Err((StatusCode::CONFLICT, "entity already exists".to_string())),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
+async fn delete_table_entity(
+    State(registry): State<StorageRegistry>,
+    Path((id, name, partition_key, row_key)): Path<(String, String, String, String)>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let engine = require_engine(&registry, &id)?;
+    let store = engine.table_store().await.ok_or((StatusCode::CONFLICT, "instance is not running".to_string()))?;
+    match store.delete_entity(&name, &partition_key, &row_key, None) {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(TableCoreError::TableNotFound(name)) => Err((StatusCode::NOT_FOUND, format!("table '{name}' not found"))),
+        Err(TableCoreError::EntityNotFound) => Err((StatusCode::NOT_FOUND, "entity not found".to_string())),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+

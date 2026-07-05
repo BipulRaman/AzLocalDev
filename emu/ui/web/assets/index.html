@@ -262,26 +262,77 @@
         <section id="view-storage-blob" class="view hidden">
           <div class="view-heading">
             <div>
-              <h1 id="blob-instance-title">Storage (Blob)</h1>
+              <h1 id="blob-instance-title">Storage</h1>
             </div>
           </div>
-          <div class="command-bar">
-            <button class="cmd-btn cmd-btn-primary" id="blob-new-container-btn">
-              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              New container
-            </button>
+
+          <div class="tabs" id="storage-subnav">
+            <button class="tab-btn active" data-storage-view="containers">Containers</button>
+            <button class="tab-btn" data-storage-view="queues">Queues</button>
+            <button class="tab-btn" data-storage-view="tables">Tables</button>
           </div>
-          <div id="blob-containers" class="az-table-wrap">
-            <table class="az-table">
-              <thead>
-                <tr><th>Name</th><th>Blobs</th><th>Created</th><th class="col-actions"></th></tr>
-              </thead>
-              <tbody id="blob-containers-body"></tbody>
-            </table>
+
+          <div id="storage-view-containers" class="storage-subview">
+            <div class="command-bar">
+              <button class="cmd-btn cmd-btn-primary" id="blob-new-container-btn">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                New container
+              </button>
+            </div>
+            <div id="blob-containers" class="az-table-wrap">
+              <table class="az-table">
+                <thead>
+                  <tr><th>Name</th><th>Blobs</th><th>Created</th><th class="col-actions"></th></tr>
+                </thead>
+                <tbody id="blob-containers-body"></tbody>
+              </table>
+            </div>
+            <div id="blob-containers-empty" class="empty-state hidden">
+              <p>No containers yet.</p>
+              <button class="btn btn-primary" id="blob-new-container-btn-2">+ Create your first container</button>
+            </div>
           </div>
-          <div id="blob-containers-empty" class="empty-state hidden">
-            <p>No containers yet.</p>
-            <button class="btn btn-primary" id="blob-new-container-btn-2">+ Create your first container</button>
+
+          <div id="storage-view-queues" class="storage-subview hidden">
+            <div class="command-bar">
+              <button class="cmd-btn cmd-btn-primary" id="squeue-new-btn">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                New queue
+              </button>
+            </div>
+            <div id="squeue-list" class="az-table-wrap">
+              <table class="az-table">
+                <thead>
+                  <tr><th>Name</th><th>Approx. messages</th><th class="col-actions"></th></tr>
+                </thead>
+                <tbody id="squeue-list-body"></tbody>
+              </table>
+            </div>
+            <div id="squeue-list-empty" class="empty-state hidden">
+              <p>No queues yet.</p>
+              <button class="btn btn-primary" id="squeue-new-btn-2">+ Create your first queue</button>
+            </div>
+          </div>
+
+          <div id="storage-view-tables" class="storage-subview hidden">
+            <div class="command-bar">
+              <button class="cmd-btn cmd-btn-primary" id="stable-new-btn">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                New table
+              </button>
+            </div>
+            <div id="stable-list" class="az-table-wrap">
+              <table class="az-table">
+                <thead>
+                  <tr><th>Name</th><th>Entities</th><th class="col-actions"></th></tr>
+                </thead>
+                <tbody id="stable-list-body"></tbody>
+              </table>
+            </div>
+            <div id="stable-list-empty" class="empty-state hidden">
+              <p>No tables yet.</p>
+              <button class="btn btn-primary" id="stable-new-btn-2">+ Create your first table</button>
+            </div>
           </div>
         </section>
 
@@ -311,8 +362,208 @@
             <p>No blobs in this container yet.</p>
           </div>
         </section>
+
+        <!-- Storage (Queue): single queue detail -->
+        <section id="view-squeue-detail" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1 id="squeue-detail-title"></h1>
+            </div>
+          </div>
+          <div class="command-bar">
+            <button class="cmd-btn cmd-btn-primary" id="squeue-send-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M3 10h14M11 4l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Send message
+            </button>
+            <span class="cmd-divider"></span>
+            <button class="cmd-btn cmd-btn-danger" id="squeue-clear-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Clear messages
+            </button>
+          </div>
+          <div id="squeue-messages" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th>Message Id</th><th>Inserted</th><th>Expires</th><th>Dequeue count</th><th>Body</th></tr>
+              </thead>
+              <tbody id="squeue-messages-body"></tbody>
+            </table>
+          </div>
+          <div id="squeue-messages-empty" class="empty-state hidden">
+            <p>No visible messages in this queue. Messages currently leased out by a consumer won't appear here either.</p>
+          </div>
+        </section>
+
+        <!-- Storage (Table): single table detail -->
+        <section id="view-stable-detail" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1 id="stable-detail-title"></h1>
+            </div>
+          </div>
+          <div class="command-bar">
+            <button class="cmd-btn cmd-btn-primary" id="stable-insert-btn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              Insert entity
+            </button>
+          </div>
+          <div id="stable-entities" class="az-table-wrap">
+            <table class="az-table">
+              <thead>
+                <tr><th>PartitionKey</th><th>RowKey</th><th>Timestamp</th><th>Properties</th><th class="col-actions"></th></tr>
+              </thead>
+              <tbody id="stable-entities-body"></tbody>
+            </table>
+          </div>
+          <div id="stable-entities-empty" class="empty-state hidden">
+            <p>No entities in this table yet.</p>
+          </div>
+        </section>
+
+        <!-- Application Insights instance: Aspire-dashboard-style telemetry views -->
+        <section id="view-app-insights" class="view hidden">
+          <div class="view-heading">
+            <div>
+              <h1 id="ai-instance-title">Application Insights</h1>
+            </div>
+          </div>
+
+          <div class="tabs" id="ai-subnav">
+            <button class="tab-btn active" data-ai-view="traces">Traces</button>
+            <button class="tab-btn" data-ai-view="logs">Structured Logs</button>
+            <button class="tab-btn" data-ai-view="metrics">Metrics</button>
+            <button class="tab-btn" data-ai-view="other">Other</button>
+          </div>
+
+          <!-- Traces: one row per distributed operation -->
+          <div id="ai-view-traces" class="ai-subview">
+            <div class="command-bar">
+              <button class="cmd-btn cmd-btn-danger" id="ai-clear-btn">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Clear telemetry
+              </button>
+            </div>
+            <div class="table-card">
+              <table id="ai-traces-table">
+                <thead>
+                  <tr><th>Timestamp</th><th>Name</th><th>Spans</th><th>Duration</th><th class="col-actions">Actions</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div id="ai-traces-empty" class="empty-state hidden">
+                <p>No traces captured yet. Point your app's `APPLICATIONINSIGHTS_CONNECTION_STRING` at this instance to get started.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Trace detail: waterfall of spans + attached log/exception events -->
+          <div id="ai-view-trace-detail" class="ai-subview hidden">
+            <button type="button" class="btn btn-sm" id="ai-back-to-traces-btn">&larr; Back to traces</button>
+            <div class="trace-summary-card" id="ai-trace-summary"></div>
+            <div class="table-card">
+              <div id="ai-waterfall"></div>
+            </div>
+            <h3 class="ai-section-heading">Logs &amp; exceptions</h3>
+            <div class="table-card">
+              <table id="ai-trace-events-table">
+                <thead>
+                  <tr><th>Timestamp</th><th>Type</th><th>Message</th><th class="col-actions">Actions</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div id="ai-trace-events-empty" class="empty-state hidden">
+                <p>No log events in this trace.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Structured Logs: TrackTrace/ILogger-style messages -->
+          <div id="ai-view-logs" class="ai-subview hidden">
+            <div class="command-bar">
+              <div class="search-box">
+                <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input type="text" id="ai-log-search" placeholder="Filter…" />
+              </div>
+              <div class="filter-field">
+                <label for="ai-log-level-filter">Level</label>
+                <select id="ai-log-level-filter" class="select">
+                  <option value="">(All)</option>
+                  <option value="0">Trace</option>
+                  <option value="1">Information</option>
+                  <option value="2">Warning</option>
+                  <option value="3">Error</option>
+                  <option value="4">Critical</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-card">
+              <table id="ai-logs-table">
+                <thead>
+                  <tr><th>Level</th><th>Timestamp</th><th>Message</th><th>Trace</th><th class="col-actions">Actions</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div id="ai-logs-empty" class="empty-state hidden">
+                <p>No structured logs captured yet.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metrics -->
+          <div id="ai-view-metrics" class="ai-subview hidden">
+            <div class="table-card">
+              <table id="ai-metrics-table">
+                <thead>
+                  <tr><th>Timestamp</th><th>Name</th><th>Value</th><th class="col-actions">Actions</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div id="ai-metrics-empty" class="empty-state hidden">
+                <p>No metrics captured yet.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Other telemetry: events / page views / availability / unrecognized -->
+          <div id="ai-view-other" class="ai-subview hidden">
+            <div class="command-bar">
+              <select id="ai-other-type-filter" class="select">
+                <option value="event">Events</option>
+                <option value="page_view">Page views</option>
+                <option value="availability">Availability</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="table-card">
+              <table id="ai-other-table">
+                <thead>
+                  <tr><th>Timestamp</th><th>Name</th><th>Result</th><th class="col-actions">Actions</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div id="ai-other-empty" class="empty-state hidden">
+                <p>No telemetry of this type yet.</p>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
+  </div>
+
+  <!-- Telemetry item details flyout (Aspire-dashboard-style side panel, not a modal - the
+       underlying table stays visible/interactive while this is open). -->
+  <div class="detail-panel hidden" id="detail-panel">
+    <div class="detail-panel-header">
+      <div>
+        <h2 id="detail-panel-title"></h2>
+        <div class="detail-panel-subtitle" id="detail-panel-subtitle"></div>
+      </div>
+      <button type="button" class="icon-btn-sm" id="detail-panel-close" title="Close" aria-label="Close">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="detail-panel-body" id="detail-panel-body"></div>
   </div>
 
   <!-- New resource group modal -->
@@ -340,6 +591,70 @@
         <div class="modal-actions">
           <button type="button" class="btn" data-close-modal>Cancel</button>
           <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- New storage queue modal -->
+  <div class="modal-backdrop hidden" id="modal-new-squeue">
+    <div class="modal">
+      <h2>New queue</h2>
+      <form id="new-squeue-form">
+        <label for="new-squeue-name">Name</label>
+        <input type="text" id="new-squeue-name" required autocomplete="off" pattern="[a-z0-9-]+" title="Lowercase letters, numbers, and hyphens only" />
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Send storage queue message modal -->
+  <div class="modal-backdrop hidden" id="modal-squeue-send">
+    <div class="modal">
+      <h2>Send test message</h2>
+      <form id="squeue-send-form">
+        <label for="squeue-send-body">Message body</label>
+        <textarea id="squeue-send-body" rows="5"></textarea>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Send</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- New table modal -->
+  <div class="modal-backdrop hidden" id="modal-new-stable">
+    <div class="modal">
+      <h2>New table</h2>
+      <form id="new-stable-form">
+        <label for="new-stable-name">Name</label>
+        <input type="text" id="new-stable-name" required autocomplete="off" pattern="[A-Za-z][A-Za-z0-9]*" title="Letters and numbers only, starting with a letter" />
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Insert table entity modal -->
+  <div class="modal-backdrop hidden" id="modal-stable-insert">
+    <div class="modal modal-wide">
+      <h2>Insert entity</h2>
+      <form id="stable-insert-form">
+        <label for="stable-insert-pk">PartitionKey</label>
+        <input type="text" id="stable-insert-pk" required autocomplete="off" />
+        <label for="stable-insert-rk">RowKey</label>
+        <input type="text" id="stable-insert-rk" required autocomplete="off" />
+        <label for="stable-insert-props">Properties (JSON object)</label>
+        <textarea id="stable-insert-props" rows="6" placeholder="{&quot;Status&quot;: &quot;Pending&quot;}"></textarea>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Insert</button>
         </div>
       </form>
     </div>

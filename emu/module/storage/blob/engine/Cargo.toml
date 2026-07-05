@@ -6,6 +6,10 @@ edition.workspace = true
 [dependencies]
 emu-storage-blob-core = { workspace = true }
 emu-storage-blob-server = { workspace = true }
+emu-storage-queue-core = { workspace = true }
+emu-storage-queue-server = { workspace = true }
+emu-storage-table-core = { workspace = true }
+emu-storage-table-server = { workspace = true }
 emu-registry = { workspace = true }
 emu-dev-cert = { workspace = true }
 tokio = { workspace = true }
