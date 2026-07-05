@@ -38,7 +38,7 @@ flowchart TB
         A3["Browser<br/>Dashboard UI"]
     end
 
-    subgraph App["emu-engine.exe (single tray binary)"]
+    subgraph App["AzLocalDev.exe (single tray binary)"]
         direction TB
         TRAY["Tray icon + menu<br/>(tao + tray-icon)"]
         DASH["Dashboard web server<br/>(axum, 127.0.0.1:7777)"]
@@ -81,7 +81,7 @@ emu/
 │           └── engine/                 # emu-storage-blob-engine: EmulatorEngine impl + REST API
 └── ui/
     ├── web/                            # emu-web: dashboard REST API, static assets, persistence
-    └── gui/                            # emu-gui: the tray binary (emu-engine.exe), wires everything
+    └── gui/                            # emu-gui: the tray binary (AzLocalDev.exe), wires everything
 ```
 
 Dependency direction is strictly inward: `emu-registry` knows nothing about Service Bus or Storage; each
@@ -175,7 +175,7 @@ See the [README](../README.md#using-with-azure-functions) for concrete `local.se
 ## 9. Shared dev TLS certificate (`emu-dev-cert`)
 
 A single self-signed certificate (for `localhost`/`127.0.0.1`, persisted under
-`%APPDATA%/EmuEngine/certs/`) is shared by every TLS listener (Service Bus AMQPS, Storage Blob HTTPS) so
+`%APPDATA%/AzLocalDev/certs/`) is shared by every TLS listener (Service Bus AMQPS, Storage Blob HTTPS) so
 there's only one certificate to generate and trust, not one per resource.
 
 - `emu_dev_cert::load_or_generate()` loads the persisted cert/key, generating a fresh pair on first run.
@@ -189,7 +189,7 @@ there's only one certificate to generate and trust, not one per resource.
 
 ## 10. Persistence
 
-Two independent, complementary layers, both under `%APPDATA%/EmuEngine/`:
+Two independent, complementary layers, both under `%APPDATA%/AzLocalDev/`:
 
 - **Resource group topology** (`groups/{group-id}.json`, owned by `emu-web`): one JSON file per resource
   group, containing the group's metadata plus every resource inside it (`id`, `kind`, `name`, and that
@@ -220,7 +220,7 @@ instances can never collide.
 
 ## 12. The tray application (`emu-gui`)
 
-- `[[bin]] name = "emu-engine"` (package is `emu-gui`) - built with `#![windows_subsystem = "windows"]` so it
+- `[[bin]] name = "AzLocalDev"` (package is `emu-gui`) - built with `#![windows_subsystem = "windows"]` so it
   never pops up a console window (Rust's default "console" subsystem otherwise always allocates one).
 - Uses `tao` for the Win32 message loop (required for the tray icon to function, even with no visible
   window) and `tray-icon` for the icon/menu itself. Left-click opens the dashboard in the default browser;

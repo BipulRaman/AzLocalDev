@@ -36,7 +36,7 @@ pub struct BlobEntry {
     pub data: Bytes,
 }
 
-/// Whole-store snapshot, serialized to this instance's `%APPDATA%/EmuEngine/data/...json`
+/// Whole-store snapshot, serialized to this instance's `%APPDATA%/AzLocalDev/data/...json`
 /// file. Blob bytes are base64-encoded so the whole thing round-trips through `serde_json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StoreDump {

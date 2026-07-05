@@ -145,7 +145,7 @@ impl ServiceBusEngine {
     }
 
     /// The on-disk file this instance's queue/topic/message data is persisted to, under
-    /// `%APPDATA%/EmuEngine/data/service-bus/{id}.json` (or the OS equivalent of
+    /// `%APPDATA%/AzLocalDev/data/service-bus/{id}.json` (or the OS equivalent of
     /// `dirs::config_dir()`). Kept separate per instance id so multiple Service Bus
     /// emulators don't clobber each other's data.
     fn data_file(&self) -> PathBuf {
@@ -156,7 +156,7 @@ impl ServiceBusEngine {
 /// Directory persisted Service Bus data files live in, created on demand.
 fn data_dir() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("EmuEngine").join("data").join("service-bus");
+    let dir = base.join("AzLocalDev").join("data").join("service-bus");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

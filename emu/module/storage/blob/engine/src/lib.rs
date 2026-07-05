@@ -136,7 +136,7 @@ impl BlobEngine {
     }
 
     /// The on-disk file this instance's container/blob data is persisted to, under
-    /// `%APPDATA%/EmuEngine/data/storage-blob/{id}.json` (or the OS equivalent of
+    /// `%APPDATA%/AzLocalDev/data/storage-blob/{id}.json` (or the OS equivalent of
     /// `dirs::config_dir()`).
     fn data_file(&self) -> PathBuf {
         data_dir().join(format!("{}.json", sanitize_id(&self.id)))
@@ -145,7 +145,7 @@ impl BlobEngine {
 
 fn data_dir() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("EmuEngine").join("data").join("storage-blob");
+    let dir = base.join("AzLocalDev").join("data").join("storage-blob");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

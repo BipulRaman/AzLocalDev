@@ -33,6 +33,9 @@ thiserror = "1"
 bytes = "1"
 async-trait = "0.1"
 base64 = "0.22"
+# Powers the in-app "Check for updates" feature: queries GitHub Releases for this repo and,
+# when confirmed by the user, downloads + replaces the running exe in place.
+self_update = { version = "0.44", features = ["archive-zip", "compression-zip-deflate"] }
 
 emu-servicebus-core = { path = "emu/module/servicebus/core" }
 emu-servicebus-amqp = { path = "emu/module/servicebus/amqp" }

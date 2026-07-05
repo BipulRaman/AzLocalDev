@@ -41,21 +41,21 @@ pub fn ensure_trusted(dev_cert: &emu_dev_cert::DevCertificate) {
     }
 
     let message = format!(
-        "Emu Engine uses a local, self-signed TLS certificate for its Managed-Identity-style \
+        "AzLocalDev uses a local, self-signed TLS certificate for its Managed-Identity-style \
          (AMQPS/HTTPS) endpoints, at:\n\n{}\n\n\
          Trusting it lets apps using DefaultAzureCredential/TokenCredential connect without \
          TLS errors. Trust it now?",
         dev_cert.cert_path.display()
     );
 
-    if !ask_yes_no("Emu Engine - Trust dev certificate?", &message) {
+    if !ask_yes_no("AzLocalDev - Trust dev certificate?", &message) {
         return;
     }
 
     match dev_cert.trust() {
-        Ok(()) => show_info("Emu Engine", "Certificate trusted successfully."),
+        Ok(()) => show_info("AzLocalDev", "Certificate trusted successfully."),
         Err(err) => show_info(
-            "Emu Engine",
+            "AzLocalDev",
             &format!(
                 "Couldn't trust it automatically ({err}).\n\n\
                  You can trust it manually by running this in an elevated prompt if needed:\n\n\

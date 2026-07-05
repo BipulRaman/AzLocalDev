@@ -126,6 +126,54 @@ el("modal-confirm").addEventListener("click", (ev) => {
   if (ev.target.id === "modal-confirm") settleConfirm(false);
 });
 
+// ------------------------------------------------------------- app updates
+
+/** Checks GitHub Releases for a newer version, confirms with the user, and (if accepted)
+ * triggers the in-place update + restart. `silent` suppresses the "up to date"/error toasts
+ * so the automatic startup check doesn't nag on every launch - the explicit "Check for
+ * updates" button always reports its result either way. */
+async function checkForUpdates(silent) {
+  let result;
+  try {
+    result = await api("/api/update/check");
+  } catch (err) {
+    if (!silent) toast("error", `Update check failed: ${err.message || err}`);
+    return;
+  }
+
+  if (result.status === "available") {
+    const go = await confirmDialog(
+      `Az.Local.Dev v${result.version} is available. Install it now? The app will restart to finish updating.`,
+      { title: "Update available", confirmText: "Update & restart" },
+    );
+    if (!go) return;
+    try {
+      toast("success", "Installing update…");
+      await api("/api/update/install", { method: "POST" });
+    } catch (err) {
+      toast("error", `Update failed: ${err.message || err}`);
+    }
+  } else if (result.status === "up_to_date") {
+    if (!silent) toast("success", "You're already on the latest version.");
+  } else if (!silent) {
+    toast("error", result.error || "Update check failed.");
+  }
+}
+
+el("check-updates-btn")?.addEventListener("click", () => checkForUpdates(false));
+
+(async function initVersion() {
+  try {
+    const { version } = await api("/api/version");
+    const versionEl = el("app-version");
+    if (versionEl) versionEl.textContent = `v${version}`;
+  } catch {
+    /* ignore - version display is best-effort */
+  }
+  // Mirrors a typical desktop app's silent startup update check.
+  checkForUpdates(true);
+})();
+
 // ----------------------------------------------------------- rename dialog
 
 el("rename-form").addEventListener("submit", async (ev) => {

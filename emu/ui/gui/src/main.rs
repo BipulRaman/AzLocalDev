@@ -1,5 +1,5 @@
 // This is a tray/background app with no console UI - without this, Rust's default "console"
-// subsystem on Windows would pop up a visible console window every time `emu-engine.exe` runs.
+// subsystem on Windows would pop up a visible console window every time `AzLocalDev.exe` runs.
 #![windows_subsystem = "windows"]
 
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use emu_web::AppState;
 mod dev_cert_prompt;
 mod icon;
 
-const APP_NAME: &str = "Emu Engine";
+const APP_NAME: &str = "AzLocalDev";
 const DASHBOARD_ADDR: &str = "127.0.0.1:7777";
 const SERVICE_BUS_AMQP_PORT: u16 = 5672;
 const STORAGE_BLOB_BASE_PORT: u16 = 10000;
@@ -113,7 +113,7 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Every resource group is persisted as its own `%APPDATA%/EmuEngine/groups/{id}.json`
+    // Every resource group is persisted as its own `%APPDATA%/AzLocalDev/groups/{id}.json`
     // file (see `emu_web::persist_group`/`load_all_groups`), rewritten on every rename/
     // create/delete - so this restores exactly what was there last time, names and all,
     // instead of always starting over with a single hardcoded "Service Bus" instance.

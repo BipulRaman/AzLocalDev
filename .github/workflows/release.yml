@@ -1,0 +1,115 @@
+name: Release
+
+# Builds a signed-by-nothing (see note below) Windows release of Az.Local.Dev and publishes
+# it to the GitHub Release that triggered this workflow, then the "Publish updater manifest"-
+# equivalent step is unnecessary: the in-app updater (self_update, see
+# emu/ui/web/src/update.rs) reads the GitHub Releases API directly and picks whichever asset's
+# file name contains the current build's target triple - there's no separate latest.json to
+# assemble, unlike updaters that rely on a static manifest file.
+#
+# Fires exactly ONCE when a GitHub Release is PUBLISHED (write your notes in the UI, then
+# click "Publish release"). Manual dispatch is supported for rebuilds/backfills.
+#
+# Why `release: published` and not `push: tags`?
+#   Publishing a release in the UI creates the tag, drafts, then publishes it, which would
+#   fire push + created + published all at once -> racing/duplicate builds. `published` fires
+#   once.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and publish (e.g. v1.0.2). A release is created if missing.'
+        required: true
+        type: string
+
+# Needed to create/update the release and upload the build artifact.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Windows build
+    runs-on: windows-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_RETRY: "10"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The tag is the single source of truth for the version. Strip the leading "v"
+      # (v1.0.2 -> 1.0.2) and stamp it into the workspace root Cargo.toml's
+      # `[workspace.package] version` for this build only (never committed) - every crate in
+      # the workspace inherits it via `version.workspace = true`, so `env!("CARGO_PKG_VERSION")`
+      # in emu-gui/emu-web reflects it at compile time with no other file to touch.
+      - name: Resolve tag & stamp version
+        id: tag
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { '${{ github.event.release.tag_name }}' }
+          $version = $tag -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Tag '$tag' is not a valid version (expected vX.Y.Z)."
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          $conf = "Cargo.toml"
+          $content = Get-Content $conf -Raw
+          $pattern = '(?s)(\[workspace\.package\]\s*\r?\nversion\s*=\s*)"[^"]*"'
+          if ($content -notmatch $pattern) {
+            throw "Could not find [workspace.package] version in $conf"
+          }
+          $content = $content -replace $pattern, ('$1"' + $version + '"')
+          Set-Content -Path $conf -Value $content -NoNewline -Encoding utf8
+          Write-Host "Building Az.Local.Dev $version (from tag $tag)"
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      # Not `--locked`: stamping the version above intentionally leaves Cargo.lock's recorded
+      # version for the workspace's own (path-dependency) crates out of sync; every external
+      # dependency stays pinned exactly as committed.
+      - name: Build release binary
+        run: cargo build --release -p emu-gui
+
+      # self_update (the in-app updater) matches release assets by looking for the current
+      # build's target triple inside the asset's file name, and expects the exe at the root of
+      # the archive (see `bin_name`/`bin_path_in_archive` in emu/ui/web/src/update.rs) - hence
+      # this exact naming/packaging.
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $target = "x86_64-pc-windows-msvc"
+          $zipName = "AzLocalDev-$target.zip"
+          Compress-Archive -Path "target/release/AzLocalDev.exe" -DestinationPath $zipName -Force
+          "zip_name=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # Creates the release first if this run came from workflow_dispatch against a tag that
+      # doesn't have one yet (mirrors clicking "Publish release" in the UI); otherwise the
+      # release published by the trigger itself already exists.
+      - name: Publish to GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $tag = "${{ steps.tag.outputs.tag }}"
+          $zip = "${{ steps.package.outputs.zip_name }}"
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "Az.Local.Dev $tag" --generate-notes
+          }
+
+          gh release upload $tag $zip --clobber

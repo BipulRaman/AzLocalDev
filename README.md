@@ -10,7 +10,7 @@ real **AMQP 1.0** for Service Bus, and the real **Blob REST API** (path-style, A
 
 ## Features
 
-- **System tray app** (`emu-engine.exe`) — runs quietly in the background; left-click the tray icon to open
+- **System tray app** (`AzLocalDev.exe`) — runs quietly in the background; left-click the tray icon to open
   the dashboard, right-click for a Quit/Open menu.
 - **Web dashboard** at [http://127.0.0.1:7777](http://127.0.0.1:7777) — create, rename, start/stop, and
   delete resource groups and resources; browse queues and peek/complete/abandon/dead-letter/resubmit
@@ -20,9 +20,9 @@ real **AMQP 1.0** for Service Bus, and the real **Blob REST API** (path-style, A
 - **Azure Storage (Blob) emulation** — containers and block blobs (upload/download/delete/list, metadata),
   path-style HTTP endpoints starting at port `10000`, one emulated account per resource.
 - **Auto-persistence** — every resource group is saved as its own JSON file under
-  `%APPDATA%/EmuEngine/groups/{group-id}.json`, kept in sync on every create/rename/delete, and restored
+  `%APPDATA%/AzLocalDev/groups/{group-id}.json`, kept in sync on every create/rename/delete, and restored
   automatically on the next launch. Queue/message data is stored separately under
-  `%APPDATA%/EmuEngine/data/service-bus/{instance-id}.json`.
+  `%APPDATA%/AzLocalDev/data/service-bus/{instance-id}.json`.
 
 ## Project layout
 
@@ -38,13 +38,13 @@ This is a Cargo workspace:
 | `emu-storage-blob-engine` | `emu/module/storage/blob/engine` | Wires core + HTTP server into a runnable Storage (Blob) emulator instance, plus its REST API. |
 | `emu-registry` | `emu/services/engine` | Generic `EmulatorEngine`/`EngineRegistry` traits shared by every resource kind. |
 | `emu-web` | `emu/ui/web` | Dashboard REST API, static asset serving, and per-group persistence. |
-| `emu-gui` | `emu/ui/gui` | The tray application binary (`emu-engine`), wiring everything together. |
+| `emu-gui` | `emu/ui/gui` | The tray application binary (`AzLocalDev`), wiring everything together. |
 
 ## Building & running
 
 ```powershell
 cargo build -p emu-gui
-./target/debug/emu-engine.exe
+./target/debug/AzLocalDev.exe
 ```
 
 The dashboard opens automatically on first launch; afterwards, use the tray icon to reopen it or quit.
@@ -103,12 +103,12 @@ emulated resource runs a second, dedicated TLS listener just for this:
 - Service Bus: AMQPS on port `5671` (fixed, one loopback address per instance - e.g. `127.0.0.2`).
 - Storage (Blob): HTTPS on `<http port> + 10000` (e.g. HTTP `10000` → HTTPS `20000`).
 
-Both use the same self-signed dev certificate (persisted under `%APPDATA%/EmuEngine/certs`, generated on
+Both use the same self-signed dev certificate (persisted under `%APPDATA%/AzLocalDev/certs`, generated on
 first use). The emulator tries to auto-trust it in your Windows user certificate store; if that fails, the
 TLS handshake itself will fail cert validation until you trust it manually:
 
 ```powershell
-certutil -user -addstore Root "$env:APPDATA\EmuEngine\certs\dev-cert.pem"
+certutil -user -addstore Root "$env:APPDATA\AzLocalDev\certs\dev-cert.pem"
 ```
 
 For identity-based `AzureWebJobsStorage`, set `AzureWebJobsStorage__blobServiceUri` to the `https://` value

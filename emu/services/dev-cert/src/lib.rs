@@ -151,7 +151,7 @@ fn init_crypto_provider() {
 /// Directory persisted dev-certificate files live in, created on demand.
 fn cert_dir() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("EmuEngine").join("certs");
+    let dir = base.join("AzLocalDev").join("certs");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

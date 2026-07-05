@@ -1,0 +1,40 @@
+name: CI
+
+# Verifies the workspace compiles on every commit and pull request that touches it.
+# `branches: ['**']` matches all branch pushes but NOT tag pushes, so publishing a release
+# (which pushes a tag) doesn't also trigger a redundant CI run - the Release workflow already
+# builds for that tag.
+on:
+  push:
+    branches: ["**"]
+    paths: ["emu/**", "vendor/**", "Cargo.toml", "Cargo.lock"]
+  pull_request:
+    paths: ["emu/**", "vendor/**", "Cargo.toml", "Cargo.lock"]
+
+# Cancel an in-progress run when new commits are pushed to the same ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    # This app is Windows-only (windows_subsystem, native message boxes/tray icon via
+    # windows-sys, `certutil` for dev-cert trust) - there's no other OS to build for.
+    runs-on: windows-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build workspace (verify it compiles)
+        run: cargo build --workspace --locked

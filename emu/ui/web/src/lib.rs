@@ -19,6 +19,8 @@ use tower_http::cors::CorsLayer;
 
 use emu_registry::{EngineRegistry, EngineSummary, GroupSnapshot, ResourceGroup, ResourceKind};
 
+mod update;
+
 #[derive(RustEmbed)]
 #[folder = "assets/"]
 struct Assets;
@@ -42,6 +44,9 @@ pub fn dashboard_router(state: AppState) -> Router {
         .route("/api/resource-groups/:id", axum::routing::delete(delete_resource_group).patch(rename_resource_group))
         .route("/api/resource-groups/:id/start", post(start_resource_group))
         .route("/api/resource-groups/:id/stop", post(stop_resource_group))
+        .route("/api/version", get(update::version))
+        .route("/api/update/check", get(update::check_for_update))
+        .route("/api/update/install", post(update::install_update))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -237,12 +242,12 @@ async fn stop_resource_group(
 
 /// Each resource group is persisted as its own `{group-id}.json` file under this folder -
 /// sits alongside the existing `data/` (per-instance queue/message data) and `certs/`
-/// folders under the same `%APPDATA%/EmuEngine` base. One file per group (rather than one
+/// folders under the same `%APPDATA%/AzLocalDev` base. One file per group (rather than one
 /// big file for everything) means every edit only rewrites the group actually touched, and
 /// a group's file is simply deleted when the group itself is deleted.
 fn groups_dir() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("EmuEngine").join("groups");
+    let dir = base.join("AzLocalDev").join("groups");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
