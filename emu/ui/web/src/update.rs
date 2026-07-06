@@ -15,7 +15,6 @@ use std::time::Duration;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
-use self_update::cargo_crate_version;
 use self_update::update::ReleaseUpdate;
 use self_update::version::bump_is_greater;
 use serde::Serialize;
@@ -26,16 +25,21 @@ const REPO_OWNER: &str = "BipulRaman";
 const REPO_NAME: &str = "AzLocalDev";
 const BIN_NAME: &str = "AzLocalDev";
 
+/// The running app's version - always comes from the GitHub Release tag that produced this
+/// build (baked in at compile time by `build.rs` via the `AZLOCALDEV_VERSION` env var the
+/// release workflow sets), NOT from `Cargo.toml`/`CARGO_PKG_VERSION`. Local dev builds get a
+/// `0.0.0-dev+<sha>` placeholder instead (see `build.rs`).
+const APP_VERSION: &str = env!("AZLOCALDEV_VERSION");
+
 #[derive(Serialize)]
 pub struct VersionResponse {
     version: &'static str,
 }
 
-/// Returns the running app's version (from the workspace `Cargo.toml`), for display in the
-/// dashboard's footer.
+/// Returns the running app's version, for display in the dashboard's footer.
 pub async fn version() -> Json<VersionResponse> {
     Json(VersionResponse {
-        version: cargo_crate_version!(),
+        version: APP_VERSION,
     })
 }
 
@@ -58,7 +62,7 @@ fn build_updater() -> self_update::errors::Result<Box<dyn ReleaseUpdate>> {
         // stdout logging.
         .no_confirm(true)
         .show_output(false)
-        .current_version(cargo_crate_version!())
+        .current_version(APP_VERSION)
         .build()
 }
 
@@ -68,8 +72,7 @@ pub async fn check_for_update() -> Json<UpdateCheckResponse> {
     let outcome = tokio::task::spawn_blocking(|| -> Result<Option<String>, String> {
         let updater = build_updater().map_err(|e| e.to_string())?;
         let release = updater.get_latest_release().map_err(|e| e.to_string())?;
-        let is_newer = bump_is_greater(cargo_crate_version!(), &release.version)
-            .map_err(|e| e.to_string())?;
+        let is_newer = bump_is_greater(APP_VERSION, &release.version).map_err(|e| e.to_string())?;
         Ok(is_newer.then_some(release.version))
     })
     .await;
