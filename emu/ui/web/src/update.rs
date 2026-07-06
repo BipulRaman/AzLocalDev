@@ -16,7 +16,6 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use self_update::update::ReleaseUpdate;
-use self_update::version::bump_is_greater;
 use serde::Serialize;
 
 use crate::AppState;
@@ -71,9 +70,16 @@ fn build_updater() -> self_update::errors::Result<Box<dyn ReleaseUpdate>> {
 pub async fn check_for_update() -> Json<UpdateCheckResponse> {
     let outcome = tokio::task::spawn_blocking(|| -> Result<Option<String>, String> {
         let updater = build_updater().map_err(|e| e.to_string())?;
-        let release = updater.get_latest_release().map_err(|e| e.to_string())?;
-        let is_newer = bump_is_greater(APP_VERSION, &release.version).map_err(|e| e.to_string())?;
-        Ok(is_newer.then_some(release.version))
+        // Deliberately NOT `get_latest_release()` - that hits GitHub's `/releases/latest`
+        // endpoint, which excludes prereleases entirely and 404s until a non-prerelease
+        // release exists (all releases published by release.yml so far are prereleases).
+        // `get_latest_releases()` instead lists ALL releases (via `/releases`, same endpoint
+        // `install_update()`'s actual download path already uses) and returns only the ones
+        // newer than `current_version`, already sorted newest-first.
+        let newer = updater
+            .get_latest_releases(APP_VERSION)
+            .map_err(|e| e.to_string())?;
+        Ok(newer.into_iter().next().map(|r| r.version))
     })
     .await;
 
