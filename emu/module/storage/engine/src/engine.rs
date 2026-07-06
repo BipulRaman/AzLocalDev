@@ -218,8 +218,48 @@ impl EmulatorEngine for StorageEngine {
             None => BlobStore::new(),
         };
 
+        let queue_store = match restored.as_ref() {
+            Some(r) => QueueStore::restore(r.queue_dump.clone()),
+            None => QueueStore::new(),
+        };
+        let table_store = match restored.as_ref() {
+            Some(r) => TableStore::restore(r.table_dump.clone()),
+            None => TableStore::new(),
+        };
+
+        // Bind every listener up front, before spawning any server task below. If binding
+        // any of them fails (e.g. a port already in use), propagating it here as a real
+        // `start()` error is the whole point - but just as importantly, doing all the binds
+        // *before* any spawn means a later bind failing never leaves an earlier one's
+        // already-spawned, now-untracked server task/listener running in the background
+        // (which would happen if e.g. the Table bind failed only after the Blob/Queue
+        // listeners were already bound-and-spawned).
         let addr: SocketAddr = format!("127.0.0.1:{}", self.port).parse()?;
         let listener = tokio::net::TcpListener::bind(addr).await?;
+        let queue_addr: SocketAddr = format!("127.0.0.1:{}", self.queue_port()).parse()?;
+        let queue_listener = tokio::net::TcpListener::bind(queue_addr).await?;
+        let table_addr: SocketAddr = format!("127.0.0.1:{}", self.table_port()).parse()?;
+        let table_listener = tokio::net::TcpListener::bind(table_addr).await?;
+
+        // The HTTPS listener is what lets `TokenCredential`-based clients (the local stand-in
+        // for Managed Identity - see `managed_identity_config`) connect at all, since Azure
+        // Core's bearer-token auth policy refuses to send a token over plain HTTP. Cert
+        // generation/loading is best-effort: if it fails for some reason, the plain HTTP
+        // listener above still works fine for connection-string-based clients, so we only warn
+        // instead of failing startup - but when a cert IS available, the port itself is still
+        // bound synchronously here, so a genuine port conflict is a hard `start()` failure
+        // just like the other three listeners (a `std::net::TcpListener`, since that's what
+        // `axum_server::from_tcp_rustls` takes to let the actual TLS server be built lazily
+        // inside the spawned task below, after this synchronous bind already succeeded).
+        let https_addr: SocketAddr = format!("127.0.0.1:{}", self.https_port()).parse()?;
+        let https_bound = match emu_dev_cert::load_or_generate() {
+            Ok(dev_cert) => Some((dev_cert, std::net::TcpListener::bind(https_addr)?)),
+            Err(err) => {
+                tracing::warn!(?err, "failed to prepare dev TLS certificate; Storage (Blob) HTTPS listener disabled");
+                None
+            }
+        };
+
         let router = emu_storage_blob_server::router(store.clone());
         let handle = tokio::spawn(async move {
             if let Err(err) = axum::serve(listener, router).await {
@@ -227,12 +267,6 @@ impl EmulatorEngine for StorageEngine {
             }
         });
 
-        let queue_store = match restored.as_ref() {
-            Some(r) => QueueStore::restore(r.queue_dump.clone()),
-            None => QueueStore::new(),
-        };
-        let queue_addr: SocketAddr = format!("127.0.0.1:{}", self.queue_port()).parse()?;
-        let queue_listener = tokio::net::TcpListener::bind(queue_addr).await?;
         let queue_router = emu_storage_queue_server::router(queue_store.clone());
         let queue_handle = tokio::spawn(async move {
             if let Err(err) = axum::serve(queue_listener, queue_router).await {
@@ -240,12 +274,6 @@ impl EmulatorEngine for StorageEngine {
             }
         });
 
-        let table_store = match restored.as_ref() {
-            Some(r) => TableStore::restore(r.table_dump.clone()),
-            None => TableStore::new(),
-        };
-        let table_addr: SocketAddr = format!("127.0.0.1:{}", self.table_port()).parse()?;
-        let table_listener = tokio::net::TcpListener::bind(table_addr).await?;
         let table_router = emu_storage_table_server::router(table_store.clone());
         let table_handle = tokio::spawn(async move {
             if let Err(err) = axum::serve(table_listener, table_router).await {
@@ -253,31 +281,19 @@ impl EmulatorEngine for StorageEngine {
             }
         });
 
-        // The HTTPS listener is what lets `TokenCredential`-based clients (the local stand-in
-        // for Managed Identity - see `managed_identity_config`) connect at all, since Azure
-        // Core's bearer-token auth policy refuses to send a token over plain HTTP. Cert
-        // generation/loading is best-effort: if it fails for some reason, the plain HTTP
-        // listener above still works fine for connection-string-based clients, so we only warn
-        // instead of failing startup.
-        let https_addr: SocketAddr = format!("127.0.0.1:{}", self.https_port()).parse()?;
-        let https_handle = match emu_dev_cert::load_or_generate() {
-            Ok(dev_cert) => {
+        let https_handle = match https_bound {
+            Some((dev_cert, std_listener)) => {
                 tracing::info!(path = %dev_cert.cert_path.display(), "using dev TLS certificate for Storage (Blob) HTTPS listener");
                 let tls_config = axum_server::tls_rustls::RustlsConfig::from_config(dev_cert.server_config.clone());
                 let router_for_tls = emu_storage_blob_server::router(store.clone());
                 tokio::spawn(async move {
-                    if let Err(err) = axum_server::bind_rustls(https_addr, tls_config)
-                        .serve(router_for_tls.into_make_service())
-                        .await
-                    {
+                    let server = axum_server::from_tcp_rustls(std_listener, tls_config);
+                    if let Err(err) = server.serve(router_for_tls.into_make_service()).await {
                         tracing::error!(?err, "Storage (Blob) HTTPS server task exited with an error");
                     }
                 })
             }
-            Err(err) => {
-                tracing::warn!(?err, "failed to prepare dev TLS certificate; Storage (Blob) HTTPS listener disabled");
-                tokio::spawn(std::future::pending::<()>())
-            }
+            None => tokio::spawn(std::future::pending::<()>()),
         };
 
         let store_for_autosave = store.clone();

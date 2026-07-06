@@ -1,7 +1,6 @@
 //! AMQP 1.0 protocol adapter. Translates AMQP frames <-> [`emu_servicebus_core::Broker`] commands.
 //! Contains no business logic beyond that translation.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -66,9 +65,12 @@ impl SaslAcceptor for AcceptAnyCredentials {
 
 /// Runs the plain (non-TLS) AMQP 1.0 listener until the process is killed or the socket errors
 /// out. This is what a connection string with `UseDevelopmentEmulator=true` talks to - the
-/// Azure SDKs skip TLS entirely for that auth style.
-pub async fn run_amqp_server(broker: Broker, addr: SocketAddr) -> anyhow::Result<()> {
-    let tcp_listener = TcpListener::bind(addr).await?;
+/// Azure SDKs skip TLS entirely for that auth style. Takes an already-bound `tcp_listener`
+/// (rather than binding one itself) so the caller can bind synchronously and propagate a bind
+/// failure (e.g. the port already being in use) as a real `start()` error instead of it only
+/// ever surfacing as a background-logged error from inside a spawned task.
+pub async fn run_amqp_server(broker: Broker, tcp_listener: TcpListener) -> anyhow::Result<()> {
+    let addr = tcp_listener.local_addr()?;
     tracing::info!(%addr, "AMQP 1.0 listener started");
 
     let connection_acceptor = Arc::new(
@@ -110,10 +112,10 @@ pub async fn run_amqp_server(broker: Broker, addr: SocketAddr) -> anyhow::Result
 /// misread as an AMQP header).
 pub async fn run_amqps_server(
     broker: Broker,
-    addr: SocketAddr,
+    tcp_listener: TcpListener,
     tls_acceptor: tokio_rustls::TlsAcceptor,
 ) -> anyhow::Result<()> {
-    let tcp_listener = TcpListener::bind(addr).await?;
+    let addr = tcp_listener.local_addr()?;
     tracing::info!(%addr, "AMQPS (AMQP over TLS) listener started");
 
     let connection_acceptor = Arc::new(

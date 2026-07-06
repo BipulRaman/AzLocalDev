@@ -190,9 +190,21 @@ impl EmulatorEngine for ServiceBusEngine {
         }
 
         let addr: SocketAddr = format!("127.0.0.1:{}", self.amqp_port).parse()?;
+        let amqps_addr: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(self.amqps_host), AMQPS_PORT);
+        // Bind BOTH listeners synchronously, before spawning anything - propagating a bind
+        // failure (e.g. either port already being in use) as a real `Err` from `start()`
+        // instead of letting `run_amqp_server`/`run_amqps_server` bind inside their spawned
+        // tasks, where a failure would only ever be logged and never surfaced to the caller
+        // (`start()` would still return `Ok(())` with nothing actually listening). Binding
+        // both up front (rather than binding+spawning the AMQP one, then binding the AMQPS
+        // one) also avoids leaking an already-spawned, untracked AMQP listener task if the
+        // AMQPS bind were to fail second.
+        let amqp_listener = tokio::net::TcpListener::bind(addr).await?;
+        let amqps_listener = tokio::net::TcpListener::bind(amqps_addr).await?;
+
         let broker_for_task = broker.clone();
         let handle = tokio::spawn(async move {
-            if let Err(err) = emu_servicebus_amqp::run_amqp_server(broker_for_task, addr).await {
+            if let Err(err) = emu_servicebus_amqp::run_amqp_server(broker_for_task, amqp_listener).await {
                 tracing::error!(?err, "AMQP server task exited with an error");
             }
         });
@@ -201,8 +213,9 @@ impl EmulatorEngine for ServiceBusEngine {
         // (the local stand-in for Managed Identity - see `managed_identity_config`) connect at
         // all, since that construction path always requires TLS. Cert generation/loading is
         // best-effort: if it fails for some reason, the plain AMQP listener above still works
-        // fine for connection-string-based clients, so we only warn instead of failing startup.
-        let amqps_addr: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(self.amqps_host), AMQPS_PORT);
+        // fine for connection-string-based clients, so we only warn instead of failing startup -
+        // the port itself is already bound above regardless, so a genuine port conflict there
+        // is still caught as a hard `start()` failure.
         let amqps_handle = match emu_servicebus_amqp::load_or_generate_dev_cert() {
             Ok(dev_cert) => {
                 let broker_for_tls_task = broker.clone();
@@ -210,7 +223,7 @@ impl EmulatorEngine for ServiceBusEngine {
                 let tls_acceptor = dev_cert.tls_acceptor();
                 tokio::spawn(async move {
                     if let Err(err) =
-                        emu_servicebus_amqp::run_amqps_server(broker_for_tls_task, amqps_addr, tls_acceptor).await
+                        emu_servicebus_amqp::run_amqps_server(broker_for_tls_task, amqps_listener, tls_acceptor).await
                     {
                         tracing::error!(?err, "AMQPS server task exited with an error");
                     }
