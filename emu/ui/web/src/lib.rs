@@ -324,20 +324,39 @@ pub async fn load_all_groups(registry: &EngineRegistry) -> bool {
 
 // ------------------------------------------------------------------- static
 
+/// Serves an embedded asset, or - for any path that isn't an actual embedded file and
+/// doesn't look like one (no file extension) - falls back to `index.html`. This is the
+/// standard SPA fallback pattern: the dashboard now gives each page its own URL (e.g.
+/// `/group/:id`, `/instance/:id/queues/:name`) via the History API, so a hard reload or a
+/// direct link to one of those paths must still return the app shell (which then reads
+/// `location.pathname` on boot and restores the right view) instead of a 404. A request for
+/// a genuinely missing *file* (something with an extension, e.g. `/missing.png`) still 404s.
 pub async fn static_asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
 
-    match Assets::get(path) {
-        Some(content) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, mime.as_ref().to_string())],
-                content.data.to_vec(),
-            )
-                .into_response()
-        }
+    if let Some(content) = Assets::get(path) {
+        let mime = mime_guess::from_path(path).first_or_octet_stream();
+        return (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, mime.as_ref().to_string())],
+            content.data.to_vec(),
+        )
+            .into_response();
+    }
+
+    let looks_like_file = PathBuf::from(path).extension().is_some();
+    if looks_like_file {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    }
+
+    match Assets::get("index.html") {
+        Some(content) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html".to_string())],
+            content.data.to_vec(),
+        )
+            .into_response(),
         None => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
 }
