@@ -28,7 +28,7 @@ pub struct MessageView {
 }
 
 /// Whole-store snapshot, serialized alongside the Blob/Table dumps in this instance's
-/// `%APPDATA%/AzLocalDev/data/storage-blob/{id}.json` file (see `emu-storage-blob-engine`).
+/// `%APPDATA%/AzLocalDev/data/storage-blob/{id}.json` file (see `emu-storage-engine`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct QueueStoreDump {
     pub queues: Vec<QueueDump>,

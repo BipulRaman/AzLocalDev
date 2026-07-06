@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::{Path as StdPath, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -26,6 +26,10 @@ use tokio::task::JoinHandle;
 
 use emu_servicebus_core::{Broker, BrokerDump, EntityOptions, EntityStats, MessageState, NewMessage};
 use emu_registry::EmulatorEngine;
+
+/// Module slug used for this instance's persisted data directory/filenames - see
+/// `emu_persistence::data_dir`/`data_file`.
+const PERSISTENCE_MODULE: &str = "service-bus";
 
 /// How often the running broker's state is flushed to disk in the background. This is the
 /// safety net that protects queue/topic/message data against the process exiting abruptly
@@ -149,85 +153,7 @@ impl ServiceBusEngine {
     /// `dirs::config_dir()`). Kept separate per instance id so multiple Service Bus
     /// emulators don't clobber each other's data.
     fn data_file(&self) -> PathBuf {
-        data_dir().join(format!("{}.json", sanitize_id(&self.id)))
-    }
-}
-
-/// Directory persisted Service Bus data files live in, created on demand.
-fn data_dir() -> PathBuf {
-    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("AzLocalDev").join("data").join("service-bus");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
-}
-
-/// Makes an instance id safe to use as a filename: keeps alphanumerics, `-`, and `_`,
-/// replaces everything else with `_`.
-fn sanitize_id(id: &str) -> String {
-    id.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-/// Loads a previously-persisted [`BrokerDump`] for this instance from disk, if present.
-/// The persisted file stamps its owning instance's `id` in the content itself (not just
-/// implied by the filename) - if it doesn't match `expected_id`, the data is rejected
-/// (logged, not silently loaded) rather than trusting the filename alone, e.g. in case a
-/// file was ever copied/renamed by hand.
-fn load_dump(path: &StdPath, expected_id: &str) -> Option<BrokerDump> {
-    let text = std::fs::read_to_string(path).ok()?;
-    match serde_json::from_str::<PersistedInstanceData>(&text) {
-        Ok(data) => {
-            if data.id != expected_id {
-                tracing::warn!(
-                    path = %path.display(),
-                    stamped_id = %data.id,
-                    %expected_id,
-                    "persisted Service Bus state's stamped id doesn't match this instance, refusing to load it"
-                );
-                return None;
-            }
-            Some(data.dump)
-        }
-        Err(err) => {
-            tracing::warn!(?err, path = %path.display(), "failed to parse persisted Service Bus state, starting empty");
-            None
-        }
-    }
-}
-
-/// On-disk shape of a Service Bus instance's persisted queue/message data: the broker dump
-/// plus the owning instance's `id` stamped directly in the content, so the data is
-/// self-describing and can always be verified/looked up by id instead of trusting the
-/// filename alone.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct PersistedInstanceData {
-    id: String,
-    #[serde(flatten)]
-    dump: BrokerDump,
-}
-
-/// Exports the broker's current state and writes it to disk (with `id` stamped in the
-/// content - see [`PersistedInstanceData`]), logging (but not failing) on any error -
-/// persistence is best-effort and must never take down the emulator.
-async fn save_broker_state(broker: &Broker, path: &StdPath, id: &str) {
-    let data = PersistedInstanceData {
-        id: id.to_string(),
-        dump: broker.export().await,
-    };
-    match serde_json::to_vec_pretty(&data) {
-        Ok(bytes) => {
-            if let Err(err) = std::fs::write(path, bytes) {
-                tracing::warn!(?err, path = %path.display(), "failed to persist Service Bus state");
-            }
-        }
-        Err(err) => tracing::warn!(?err, "failed to serialize Service Bus state"),
+        emu_persistence::data_file(PERSISTENCE_MODULE, &self.id)
     }
 }
 
@@ -258,7 +184,7 @@ impl EmulatorEngine for ServiceBusEngine {
         let broker = Broker::new();
 
         let data_file = self.data_file();
-        if let Some(dump) = load_dump(&data_file, &self.id) {
+        if let Some(dump) = emu_persistence::load::<BrokerDump>(&data_file, &self.id, "Service Bus") {
             broker.import(dump).await;
             tracing::info!(path = %data_file.display(), "restored persisted Service Bus state");
         }
@@ -301,12 +227,13 @@ impl EmulatorEngine for ServiceBusEngine {
         let broker_for_autosave = broker.clone();
         let autosave_path = data_file.clone();
         let autosave_id = self.id.clone();
-        let autosave_handle = tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(AUTOSAVE_INTERVAL);
-            ticker.tick().await; // first tick fires immediately; skip it, state is already empty/fresh
-            loop {
-                ticker.tick().await;
-                save_broker_state(&broker_for_autosave, &autosave_path, &autosave_id).await;
+        let autosave_handle = emu_persistence::spawn_autosave(AUTOSAVE_INTERVAL, move || {
+            let broker = broker_for_autosave.clone();
+            let path = autosave_path.clone();
+            let id = autosave_id.clone();
+            async move {
+                let dump = broker.export().await;
+                emu_persistence::save(&path, &id, dump, "Service Bus");
             }
         });
 
@@ -324,7 +251,8 @@ impl EmulatorEngine for ServiceBusEngine {
         let mut guard = self.state.lock().await;
         if let Some(state) = guard.take() {
             state.autosave_handle.abort();
-            save_broker_state(&state.broker, &self.data_file(), &self.id).await;
+            let dump = state.broker.export().await;
+            emu_persistence::save(&self.data_file(), &self.id, dump, "Service Bus");
             state.handle.abort();
             state.amqps_handle.abort();
             tracing::info!("Service Bus emulator stopped");

@@ -32,7 +32,7 @@ Azurite-compatible) for Storage.
 - **Auto-persistence** — every resource group is saved as its own JSON file under
   `%APPDATA%/AzLocalDev/groups/{group-id}.json`, kept in sync on every create/rename/delete, and restored
   automatically on the next launch. Service Bus queue/message data and Storage Blob container/blob data are
-  each persisted separately under `%APPDATA%/AzLocalDev/data/{service-bus,storage-blob}/{instance-id}.json`.
+  each persisted separately under `%APPDATA%/AzLocalDev/data/{service-bus,storage}/{instance-id}.json`.
   Storage Queue/Table contents and Application Insights telemetry are intentionally **not** persisted - see
   the relevant crates' doc comments for why.
 
@@ -51,7 +51,7 @@ This is a Cargo workspace:
 | `emu-storage-queue-server` | `emu/module/storage/queue/server` | Queue REST API wire protocol adapter over the core store. |
 | `emu-storage-table-core` | `emu/module/storage/table/core` | Domain model: tables, entities — no I/O. |
 | `emu-storage-table-server` | `emu/module/storage/table/server` | Table REST API (OData JSON) wire protocol adapter over the core store. |
-| `emu-storage-blob-engine` | `emu/module/storage/blob/engine` | The unified `StorageEngine`: wires the Blob/Queue/Table cores + their HTTP servers into one runnable Storage account instance (3 ports), plus its REST API. Crate name kept for compatibility even though it now covers all three services. |
+| `emu-storage-engine` | `emu/module/storage/engine` | The unified `StorageEngine`: wires the Blob/Queue/Table cores + their HTTP servers into one runnable Storage account instance (3 ports), plus its REST API. Lives as a sibling of `blob`/`queue`/`table` (not nested inside `blob`) since it orchestrates all three, not just Blob. |
 | `emu-registry` | `emu/services/engine` | Generic `EmulatorEngine`/`EngineRegistry` traits shared by every resource kind. |
 | `emu-web` | `emu/ui/web` | Dashboard REST API, static asset serving, and per-group persistence. |
 | `emu-gui` | `emu/ui/gui` | The tray application binary (`AzLocalDev`), wiring everything together. |

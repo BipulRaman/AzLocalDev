@@ -36,7 +36,7 @@ let suppressUrlSync = false;
 function currentPath() {
   if (view === "running") return "/running";
   if (view === "all-resources") return "/resources";
-  if (view === "kind" && currentKind) return `/kind/${encodeURIComponent(currentKind)}`;
+  if (view === "kind" && currentKind) return `/type/${encodeURIComponent(currentKind)}`;
   if (view === "group" && currentGroupId) return `/group/${encodeURIComponent(currentGroupId)}`;
   if (currentInstanceId && ["servicebus", "queue", "storage-blob", "blob-container", "squeue-detail", "stable-detail", "app-insights"].includes(view)) {
     let path = `/instance/${encodeURIComponent(currentInstanceId)}`;
@@ -73,7 +73,7 @@ function applyLocationRoute() {
       navRunning();
     } else if (segments[0] === "resources") {
       navAllResources();
-    } else if (segments[0] === "kind" && segments[1]) {
+    } else if (segments[0] === "type" && segments[1]) {
       navKind(segments[1]);
     } else if (segments[0] === "group" && segments[1]) {
       navGroup(segments[1]);
@@ -842,7 +842,14 @@ function renderGroupsTable() {
 
 // ------------------------------------------------------------- group view
 
-function engineRow(eng) {
+/** Builds one `<tr>` for a resource row - shared by every resource-listing view (group
+ * detail, all-resources, running-resources, per-kind), which only differ in which optional
+ * columns are shown (controlled via `opts`). Consolidated from four near-identical
+ * copy-pasted row-builder functions specifically because that duplication already caused a
+ * real bug once (one copy missing the toggle-spinner markup another had) - a single shared
+ * builder means a markup/behavior fix here always applies to every view at once. */
+function engineRow(eng, opts = {}) {
+  const { showType = true, showGroup = false, showActions = true } = opts;
   const kindInfo = kindCache.find((k) => k.kind === eng.kind);
   const typeLabel = kindInfo ? kindInfo.display_name : eng.kind;
   const tr = document.createElement("tr");
@@ -855,17 +862,23 @@ function engineRow(eng) {
       </label>
     </td>
     <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
-    <td>${typeLabel}</td>
+    ${showType ? `<td>${typeLabel}</td>` : ""}
+    ${showGroup ? `<td class="link-cell" data-open-group-cell="${eng.group_id}">${groupName(eng.group_id)}</td>` : ""}
     <td class="col-actions">${iconBtn("info", "View details", `data-details="${eng.id}"`)}</td>
-    <td class="col-actions">
+    ${
+      showActions
+        ? `<td class="col-actions">
       <div class="row-actions">
         ${iconBtn("edit", "Rename", `data-rename-engine="${eng.id}"`)}
         ${iconBtn("trash", "Delete", `data-delete-engine="${eng.id}"`, "icon-btn-danger")}
       </div>
-    </td>
+    </td>`
+        : ""
+    }
   `;
   return tr;
 }
+
 
 function wireEngineRowEvents(body) {
   body.querySelectorAll("[data-details]").forEach((btn) => {
@@ -1043,75 +1056,6 @@ function renderGroupResources() {
   updateGroupToggle();
 }
 
-function runningRow(eng) {
-  const kindInfo = kindCache.find((k) => k.kind === eng.kind);
-  const typeLabel = kindInfo ? kindInfo.display_name : eng.kind;
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td class="col-toggle">
-      <label class="switch" title="Stop">
-        <input type="checkbox" data-toggle="${eng.id}" data-running="true" checked />
-        <span class="track"></span>
-        <span class="switch-spinner"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="24 100"/></svg></span>
-      </label>
-    </td>
-    <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
-    <td>${typeLabel}</td>
-    <td class="link-cell" data-open-group-cell="${eng.group_id}">${groupName(eng.group_id)}</td>
-    <td class="col-actions">${iconBtn("info", "View details", `data-details="${eng.id}"`)}</td>
-  `;
-  return tr;
-}
-
-function kindRow(eng) {
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td class="col-toggle">
-      <label class="switch" title="${eng.running ? "Stop" : "Start"}">
-        <input type="checkbox" data-toggle="${eng.id}" data-running="${eng.running}" ${eng.running ? "checked" : ""} />
-        <span class="track"></span>
-        <span class="switch-spinner"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="24 100"/></svg></span>
-      </label>
-    </td>
-    <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
-    <td class="link-cell" data-open-group-cell="${eng.group_id}">${groupName(eng.group_id)}</td>
-    <td class="col-actions">${iconBtn("info", "View details", `data-details="${eng.id}"`)}</td>
-    <td class="col-actions">
-      <div class="row-actions">
-        ${iconBtn("edit", "Rename", `data-rename-engine="${eng.id}"`)}
-        ${iconBtn("trash", "Delete", `data-delete-engine="${eng.id}"`, "icon-btn-danger")}
-      </div>
-    </td>
-  `;
-  return tr;
-}
-
-function allResourcesRow(eng) {
-  const kindInfo = kindCache.find((k) => k.kind === eng.kind);
-  const typeLabel = kindInfo ? kindInfo.display_name : eng.kind;
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td class="col-toggle">
-      <label class="switch" title="${eng.running ? "Stop" : "Start"}">
-        <input type="checkbox" data-toggle="${eng.id}" data-running="${eng.running}" ${eng.running ? "checked" : ""} />
-        <span class="track"></span>
-        <span class="switch-spinner"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="24 100"/></svg></span>
-      </label>
-    </td>
-    <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
-    <td>${typeLabel}</td>
-    <td class="link-cell" data-open-group-cell="${eng.group_id}">${groupName(eng.group_id)}</td>
-    <td class="col-actions">${iconBtn("info", "View details", `data-details="${eng.id}"`)}</td>
-    <td class="col-actions">
-      <div class="row-actions">
-        ${iconBtn("edit", "Rename", `data-rename-engine="${eng.id}"`)}
-        ${iconBtn("trash", "Delete", `data-delete-engine="${eng.id}"`, "icon-btn-danger")}
-      </div>
-    </td>
-  `;
-  return tr;
-}
-
 function renderAllResources() {
   const body = el("all-resources-body");
   const empty = el("all-resources-empty");
@@ -1127,7 +1071,7 @@ function renderAllResources() {
   wrap.classList.remove("hidden");
 
   for (const eng of engineCache) {
-    body.appendChild(allResourcesRow(eng));
+    body.appendChild(engineRow(eng, { showGroup: true }));
   }
   wireEngineRowEvents(body);
 }
@@ -1148,7 +1092,7 @@ function renderRunningResources() {
   wrap.classList.remove("hidden");
 
   for (const eng of running) {
-    body.appendChild(runningRow(eng));
+    body.appendChild(engineRow(eng, { showGroup: true, showActions: false }));
   }
   wireEngineRowEvents(body);
 }
@@ -1170,7 +1114,7 @@ function renderKindResources() {
   wrap.classList.remove("hidden");
 
   for (const eng of engines) {
-    body.appendChild(kindRow(eng));
+    body.appendChild(engineRow(eng, { showType: false, showGroup: true }));
   }
   wireEngineRowEvents(body);
 }
@@ -1225,7 +1169,7 @@ el("new-container-form").addEventListener("submit", async (ev) => {
   const name = input.value.trim();
   if (!name) return;
   try {
-    await api(`/api/storage-blob/${currentInstanceId}/containers`, {
+    await api(`/api/storage/${currentInstanceId}/containers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -1247,7 +1191,7 @@ el("blob-upload-input").addEventListener("change", async (ev) => {
   if (!file || !currentInstanceId || !currentContainerName) return;
   try {
     await api(
-      `/api/storage-blob/${currentInstanceId}/containers/${currentContainerName}/blobs/${encodeURIComponent(file.name)}`,
+      `/api/storage/${currentInstanceId}/containers/${currentContainerName}/blobs/${encodeURIComponent(file.name)}`,
       {
         method: "PUT",
         headers: { "Content-Type": file.type || "application/octet-stream" },
@@ -1277,7 +1221,7 @@ el("new-squeue-form").addEventListener("submit", async (ev) => {
   const name = input.value.trim();
   if (!name) return;
   try {
-    await api(`/api/storage-blob/${currentInstanceId}/queues`, {
+    await api(`/api/storage/${currentInstanceId}/queues`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -1295,7 +1239,7 @@ async function loadSQueues() {
   if (!currentInstanceId) return;
   let queues;
   try {
-    queues = await api(`/api/storage-blob/${currentInstanceId}/queues`);
+    queues = await api(`/api/storage/${currentInstanceId}/queues`);
   } catch (err) {
     toast("error", `Failed to load queues: ${err.message}`);
     return;
@@ -1326,7 +1270,7 @@ async function loadSQueues() {
       ev.stopPropagation();
       if (!(await confirmDialog(`Delete queue "${q.name}"? All of its messages will be lost.`))) return;
       try {
-        await api(`/api/storage-blob/${currentInstanceId}/queues/${q.name}`, { method: "DELETE" });
+        await api(`/api/storage/${currentInstanceId}/queues/${q.name}`, { method: "DELETE" });
         toast("success", `Queue "${q.name}" deleted`);
       } catch (err) {
         toast("error", err.message);
@@ -1341,7 +1285,7 @@ async function loadSQueueMessages() {
   if (!currentInstanceId || !currentSQueueName) return;
   let messages;
   try {
-    messages = await api(`/api/storage-blob/${currentInstanceId}/queues/${currentSQueueName}/messages`);
+    messages = await api(`/api/storage/${currentInstanceId}/queues/${currentSQueueName}/messages`);
   } catch (err) {
     toast("error", `Failed to load messages: ${err.message}`);
     return;
@@ -1381,7 +1325,7 @@ el("squeue-send-form").addEventListener("submit", async (ev) => {
   const input = el("squeue-send-body");
   const body = input.value;
   try {
-    await api(`/api/storage-blob/${currentInstanceId}/queues/${currentSQueueName}/messages`, {
+    await api(`/api/storage/${currentInstanceId}/queues/${currentSQueueName}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body }),
@@ -1399,7 +1343,7 @@ el("squeue-clear-btn").addEventListener("click", async () => {
   if (!currentInstanceId || !currentSQueueName) return;
   if (!(await confirmDialog(`Clear all messages from "${currentSQueueName}"?`, { confirmText: "Clear" }))) return;
   try {
-    await api(`/api/storage-blob/${currentInstanceId}/queues/${currentSQueueName}/messages`, { method: "DELETE" });
+    await api(`/api/storage/${currentInstanceId}/queues/${currentSQueueName}/messages`, { method: "DELETE" });
     toast("success", "Queue cleared");
   } catch (err) {
     toast("error", err.message);
@@ -1417,7 +1361,7 @@ el("new-stable-form").addEventListener("submit", async (ev) => {
   const name = input.value.trim();
   if (!name) return;
   try {
-    await api(`/api/storage-blob/${currentInstanceId}/tables`, {
+    await api(`/api/storage/${currentInstanceId}/tables`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -1435,7 +1379,7 @@ async function loadSTables() {
   if (!currentInstanceId) return;
   let tables;
   try {
-    tables = await api(`/api/storage-blob/${currentInstanceId}/tables`);
+    tables = await api(`/api/storage/${currentInstanceId}/tables`);
   } catch (err) {
     toast("error", `Failed to load tables: ${err.message}`);
     return;
@@ -1466,7 +1410,7 @@ async function loadSTables() {
       ev.stopPropagation();
       if (!(await confirmDialog(`Delete table "${t.name}"? All of its entities will be lost.`))) return;
       try {
-        await api(`/api/storage-blob/${currentInstanceId}/tables/${t.name}`, { method: "DELETE" });
+        await api(`/api/storage/${currentInstanceId}/tables/${t.name}`, { method: "DELETE" });
         toast("success", `Table "${t.name}" deleted`);
       } catch (err) {
         toast("error", err.message);
@@ -1481,7 +1425,7 @@ async function loadSTableEntities() {
   if (!currentInstanceId || !currentSTableName) return;
   let entities;
   try {
-    entities = await api(`/api/storage-blob/${currentInstanceId}/tables/${currentSTableName}/entities`);
+    entities = await api(`/api/storage/${currentInstanceId}/tables/${currentSTableName}/entities`);
   } catch (err) {
     toast("error", `Failed to load entities: ${err.message}`);
     return;
@@ -1512,7 +1456,7 @@ async function loadSTableEntities() {
     tr.querySelector("[data-delete-entity]").addEventListener("click", async () => {
       if (!(await confirmDialog("Delete this entity?"))) return;
       try {
-        await api(`/api/storage-blob/${currentInstanceId}/tables/${currentSTableName}/entities/${encodeURIComponent(e.partition_key)}/${encodeURIComponent(e.row_key)}`, {
+        await api(`/api/storage/${currentInstanceId}/tables/${currentSTableName}/entities/${encodeURIComponent(e.partition_key)}/${encodeURIComponent(e.row_key)}`, {
           method: "DELETE",
         });
         toast("success", "Entity deleted");
@@ -1543,7 +1487,7 @@ el("stable-insert-form").addEventListener("submit", async (ev) => {
     }
   }
   try {
-    await api(`/api/storage-blob/${currentInstanceId}/tables/${currentSTableName}/entities`, {
+    await api(`/api/storage/${currentInstanceId}/tables/${currentSTableName}/entities`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ partition_key: partitionKey, row_key: rowKey, properties }),
@@ -1786,7 +1730,7 @@ async function loadContainers() {
   if (!currentInstanceId) return;
   let containers;
   try {
-    containers = await api(`/api/storage-blob/${currentInstanceId}/containers`);
+    containers = await api(`/api/storage/${currentInstanceId}/containers`);
   } catch (err) {
     toast("error", `Failed to load containers: ${err.message}`);
     return;
@@ -1829,7 +1773,7 @@ async function loadContainers() {
       const name = btn.getAttribute("data-delete-container");
       if (!(await confirmDialog(`Delete container "${name}"? All of its blobs will be lost.`))) return;
       try {
-        await api(`/api/storage-blob/${currentInstanceId}/containers/${name}`, { method: "DELETE" });
+        await api(`/api/storage/${currentInstanceId}/containers/${name}`, { method: "DELETE" });
         toast("success", `Container "${name}" deleted`);
       } catch (err) {
         toast("error", err.message);
@@ -1844,7 +1788,7 @@ async function loadBlobs() {
   let blobs;
   try {
     blobs = await api(
-      `/api/storage-blob/${currentInstanceId}/containers/${currentContainerName}/blobs`
+      `/api/storage/${currentInstanceId}/containers/${currentContainerName}/blobs`
     );
   } catch (err) {
     toast("error", `Failed to load blobs: ${err.message}`);
@@ -1865,7 +1809,7 @@ async function loadBlobs() {
   wrap.classList.remove("hidden");
 
   for (const b of blobs) {
-    const downloadUrl = `/api/storage-blob/${currentInstanceId}/containers/${currentContainerName}/blobs/${encodeURIComponent(b.name)}`;
+    const downloadUrl = `/api/storage/${currentInstanceId}/containers/${currentContainerName}/blobs/${encodeURIComponent(b.name)}`;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><a class="mono" href="${downloadUrl}" target="_blank" rel="noopener">${escapeHtml(b.name)}</a></td>
@@ -1886,7 +1830,7 @@ async function loadBlobs() {
       const name = decodeURIComponent(btn.getAttribute("data-delete-blob"));
       if (!(await confirmDialog(`Delete blob "${name}"? This cannot be undone.`))) return;
       try {
-        await api(`/api/storage-blob/${currentInstanceId}/containers/${currentContainerName}/blobs/${encodeURIComponent(name)}`, {
+        await api(`/api/storage/${currentInstanceId}/containers/${currentContainerName}/blobs/${encodeURIComponent(name)}`, {
           method: "DELETE",
         });
         toast("success", `Blob "${name}" deleted`);

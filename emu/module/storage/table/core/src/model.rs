@@ -26,7 +26,7 @@ pub struct EntityView {
 }
 
 /// Whole-store snapshot, serialized alongside the Blob/Queue dumps in this instance's
-/// `%APPDATA%/AzLocalDev/data/storage-blob/{id}.json` file (see `emu-storage-blob-engine`).
+/// `%APPDATA%/AzLocalDev/data/storage-blob/{id}.json` file (see `emu-storage-engine`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TableStoreDump {
     pub tables: Vec<TableDump>,

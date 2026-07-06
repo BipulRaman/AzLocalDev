@@ -5,7 +5,7 @@
 //! [`router`] exposing the captured-telemetry query API that the dashboard UI nests under
 //! `/api/app-insights`.
 //!
-//! Follows the same template as `emu-storage-blob-engine`: a self-contained crate providing
+//! Follows the same template as `emu-storage-engine`: a self-contained crate providing
 //! an `EmulatorEngine` impl + its own API routes, with `emu/services/engine` and
 //! `emu/ui/*` staying untouched. Unlike Storage (Blob)/Service Bus, captured telemetry is
 //! intentionally *not* persisted to disk (see `emu-appinsights-core`'s `MAX_ITEMS` doc

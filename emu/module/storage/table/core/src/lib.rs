@@ -4,7 +4,7 @@
 //! in-memory store of tables and entities. The wire protocol (Azure Table REST API's OData
 //! JSON, over HTTP) lives in `emu-storage-table-server`, driven purely by this store's
 //! methods. Like `emu-storage-queue-core`, table/entity contents ARE persisted to disk
-//! across restarts, alongside Blob data (see `emu-storage-blob-engine`'s unified
+//! across restarts, alongside Blob data (see `emu-storage-engine`'s unified
 //! `StorageEngine::start`/`stop`/autosave, which calls this store's [`TableStore::dump`]/
 //! [`TableStore::restore`]).
 //!

@@ -47,7 +47,7 @@ fn query_usize(query: &HashMap<String, String>, key: &str, default: usize) -> us
 
 /// Builds the axum router implementing the Queue REST wire protocol over `store`. Bind this
 /// to its own dedicated port per Storage account instance (see the unified `StorageEngine`
-/// in `emu-storage-blob-engine`), separate from the dashboard's own HTTP server.
+/// in `emu-storage-engine`), separate from the dashboard's own HTTP server.
 pub fn router(store: QueueStore) -> Router {
     Router::new()
         .route("/:account", get(list_queues))

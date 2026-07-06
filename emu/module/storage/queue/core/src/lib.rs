@@ -5,7 +5,7 @@
 //! HTTP) lives in `emu-storage-queue-server`, driven purely by this store's methods.
 //!
 //! Queue/message contents ARE persisted to disk across restarts, alongside Blob data (see
-//! `emu-storage-blob-engine`'s unified `StorageEngine::start`/`stop`/autosave, which calls
+//! `emu-storage-engine`'s unified `StorageEngine::start`/`stop`/autosave, which calls
 //! this store's [`QueueStore::dump`]/[`QueueStore::restore`]). The one thing that does NOT
 //! survive a restart is an in-flight lease (`pop_receipt`) - it's inherently tied to a single
 //! process's lifetime (real Azure Queue Storage doesn't survive a client crash mid-lease

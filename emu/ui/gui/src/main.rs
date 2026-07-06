@@ -12,7 +12,7 @@ use tray_icon::{TrayIconBuilder, TrayIconEvent};
 use emu_registry::{EmulatorEngine, EngineRegistry};
 use emu_appinsights_engine::{AppInsightsEngine, AppInsightsRegistry};
 use emu_servicebus_engine::{ServiceBusEngine, ServiceBusRegistry};
-use emu_storage_blob_engine::{StorageEngine, StorageRegistry};
+use emu_storage_engine::{StorageEngine, StorageRegistry};
 use emu_web::AppState;
 
 mod dev_cert_prompt;
@@ -31,6 +31,21 @@ fn tray_icon() -> tray_icon::Icon {
 
 fn dashboard_url() -> String {
     format!("http://{DASHBOARD_ADDR}/")
+}
+
+/// Resolves the port a resource-kind factory closure should use for a new instance: the
+/// persisted `config`'s own `"port"` field if restoring one (so a restored instance always
+/// gets back the exact port it had before), otherwise the next free port from `counter`
+/// (advanced by `step` - most kinds reserve just 1 port, but e.g. Storage reserves 3
+/// consecutive ones for Blob/Queue/Table). Shared by every `register_kind` closure in
+/// `main()` below instead of each repeating this same fallback logic itself.
+fn resolve_port(config: &Option<serde_json::Value>, counter: &std::sync::atomic::AtomicU16, step: u16) -> u16 {
+    config
+        .as_ref()
+        .and_then(|c| c.get("port"))
+        .and_then(|p| p.as_u64())
+        .map(|p| p as u16)
+        .unwrap_or_else(|| counter.fetch_add(step, std::sync::atomic::Ordering::SeqCst))
 }
 
 /// Opens the dashboard in the user's default browser. Since it's just a normal web page,
@@ -85,12 +100,7 @@ fn main() -> anyhow::Result<()> {
         let next_seq = next_seq.clone();
         let sb_registry = sb_registry.clone();
         move |id, name, config| {
-            let port = config
-                .as_ref()
-                .and_then(|c| c.get("port"))
-                .and_then(|p| p.as_u64())
-                .map(|p| p as u16)
-                .unwrap_or_else(|| next_port.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+            let port = resolve_port(&config, &next_port, 1);
             let seq = config
                 .as_ref()
                 .and_then(|c| c.get("seq"))
@@ -107,14 +117,9 @@ fn main() -> anyhow::Result<()> {
         let next_blob_port = next_blob_port.clone();
         let blob_registry = blob_registry.clone();
         move |id, name, config| {
-            let port = config
-                .as_ref()
-                .and_then(|c| c.get("port"))
-                .and_then(|p| p.as_u64())
-                .map(|p| p as u16)
-                // Each instance reserves 3 consecutive ports (Blob/Queue/Table, matching
-                // Azurite's convention), so the counter must advance by 3 per instance, not 1.
-                .unwrap_or_else(|| next_blob_port.fetch_add(3, std::sync::atomic::Ordering::SeqCst));
+            // Each instance reserves 3 consecutive ports (Blob/Queue/Table, matching
+            // Azurite's convention), so the counter must advance by 3 per instance, not 1.
+            let port = resolve_port(&config, &next_blob_port, 3);
             let engine = Arc::new(StorageEngine::new(id, name, port));
             blob_registry.insert(engine.clone());
             engine as Arc<dyn EmulatorEngine>
@@ -125,12 +130,7 @@ fn main() -> anyhow::Result<()> {
         let next_ai_port = next_ai_port.clone();
         let ai_registry = ai_registry.clone();
         move |id, name, config| {
-            let port = config
-                .as_ref()
-                .and_then(|c| c.get("port"))
-                .and_then(|p| p.as_u64())
-                .map(|p| p as u16)
-                .unwrap_or_else(|| next_ai_port.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+            let port = resolve_port(&config, &next_ai_port, 1);
             let instrumentation_key = config
                 .as_ref()
                 .and_then(|c| c.get("instrumentation_key"))
@@ -162,22 +162,12 @@ fn main() -> anyhow::Result<()> {
         for engine in ai_registry.all() {
             next_ai_port.fetch_max(engine.port() + 1, std::sync::atomic::Ordering::SeqCst);
         }
-    } else {
-        // First-ever run (nothing persisted yet): create the same default this app has
-        // always started with, and persist it immediately so it shows up on disk right away
-        // rather than only after the user's first edit. Left OFF - every resource always
-        // starts in the "off" state; the user turns it on from the dashboard when needed.
-        let service_bus = Arc::new(ServiceBusEngine::new(
-            "service-bus-1",
-            "Service Bus",
-            SERVICE_BUS_AMQP_PORT,
-            1,
-        ));
-        let default_group = registry.create_group("Default", None);
-        registry.register(service_bus.clone(), &default_group.id);
-        sb_registry.insert(service_bus.clone());
-        emu_web::persist_group(&registry, &default_group.id);
     }
+    // Else: first-ever run, nothing persisted yet. Deliberately create NOTHING by default -
+    // no resource group, no resources - the dashboard's own "New resource group"/"New
+    // resource" flows are how a user creates their first one. (Previously this created a
+    // default "Default" group + a "Service Bus" instance automatically; removed per explicit
+    // request - first launch should be a genuinely blank slate.)
 
     let state = AppState {
         registry: registry.clone(),
@@ -187,7 +177,7 @@ fn main() -> anyhow::Result<()> {
     let router = emu_web::with_static_fallback(
         emu_web::dashboard_router(state)
             .nest("/api/service-bus", emu_servicebus_engine::router(sb_registry))
-            .nest("/api/storage-blob", emu_storage_blob_engine::router(blob_registry))
+            .nest("/api/storage", emu_storage_engine::router(blob_registry))
             .nest("/api/app-insights", emu_appinsights_engine::router(ai_registry)),
     );
     runtime.spawn(async move {

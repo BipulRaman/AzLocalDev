@@ -898,10 +898,11 @@ dependencies = [
  "emu-dev-cert",
  "emu-registry",
  "emu-servicebus-engine",
- "emu-storage-blob-engine",
+ "emu-storage-engine",
  "emu-web",
  "open",
  "resvg",
+ "serde_json",
  "tao",
  "tokio",
  "tracing",
@@ -909,6 +910,17 @@ dependencies = [
  "tray-icon",
  "uuid",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "emu-persistence"
+version = "0.1.0-dev"
+dependencies = [
+ "dirs 5.0.1",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -958,7 +970,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
- "dirs 5.0.1",
+ "emu-persistence",
  "emu-registry",
  "emu-servicebus-amqp",
  "emu-servicebus-core",
@@ -982,15 +994,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "emu-storage-blob-engine"
+name = "emu-storage-blob-server"
+version = "0.1.0-dev"
+dependencies = [
+ "axum",
+ "chrono",
+ "emu-storage-blob-core",
+ "uuid",
+]
+
+[[package]]
+name = "emu-storage-engine"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum",
  "axum-server",
- "dirs 5.0.1",
  "emu-dev-cert",
+ "emu-persistence",
  "emu-registry",
  "emu-storage-blob-core",
  "emu-storage-blob-server",
@@ -1002,16 +1024,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "emu-storage-blob-server"
-version = "0.1.0-dev"
-dependencies = [
- "axum",
- "chrono",
- "emu-storage-blob-core",
- "uuid",
 ]
 
 [[package]]

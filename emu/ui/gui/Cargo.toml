@@ -10,7 +10,7 @@ path = "src/main.rs"
 [dependencies]
 emu-registry = { workspace = true }
 emu-servicebus-engine = { workspace = true }
-emu-storage-blob-engine = { workspace = true }
+emu-storage-engine = { workspace = true }
 emu-appinsights-engine = { workspace = true }
 emu-dev-cert = { workspace = true }
 emu-web = { workspace = true }
@@ -19,6 +19,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true }
+serde_json = { workspace = true }
 tao = "0.30"
 tray-icon = "0.19"
 open = "5"

@@ -6,15 +6,16 @@ members = [
     "emu/module/servicebus/engine",
     "emu/module/storage/blob/core",
     "emu/module/storage/blob/server",
-    "emu/module/storage/blob/engine",
     "emu/module/storage/queue/core",
     "emu/module/storage/queue/server",
     "emu/module/storage/table/core",
     "emu/module/storage/table/server",
+    "emu/module/storage/engine",
     "emu/module/appinsights/core",
     "emu/module/appinsights/engine",
     "emu/services/dev-cert",
     "emu/services/engine",
+    "emu/services/persistence",
     "emu/ui/web",
     "emu/ui/gui",
 ]
@@ -53,14 +54,15 @@ emu-registry = { path = "emu/services/engine" }
 emu-servicebus-engine = { path = "emu/module/servicebus/engine" }
 emu-storage-blob-core = { path = "emu/module/storage/blob/core" }
 emu-storage-blob-server = { path = "emu/module/storage/blob/server" }
-emu-storage-blob-engine = { path = "emu/module/storage/blob/engine" }
 emu-storage-queue-core = { path = "emu/module/storage/queue/core" }
 emu-storage-queue-server = { path = "emu/module/storage/queue/server" }
 emu-storage-table-core = { path = "emu/module/storage/table/core" }
 emu-storage-table-server = { path = "emu/module/storage/table/server" }
+emu-storage-engine = { path = "emu/module/storage/engine" }
 emu-appinsights-core = { path = "emu/module/appinsights/core" }
 emu-appinsights-engine = { path = "emu/module/appinsights/engine" }
 emu-dev-cert = { path = "emu/services/dev-cert" }
+emu-persistence = { path = "emu/services/persistence" }
 emu-web = { path = "emu/ui/web" }
 
 # Locally patched fe2o3-amqp: adds an optional custom delivery-tag override on

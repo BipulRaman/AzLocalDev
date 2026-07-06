@@ -52,7 +52,7 @@ fn metadata_from_headers(headers: &HeaderMap) -> HashMap<String, String> {
 }
 
 /// Builds the axum router implementing the Blob REST wire protocol over `store`. Bind this
-/// to its own dedicated port per Storage account instance (see `emu-storage-blob-engine`),
+/// to its own dedicated port per Storage account instance (see `emu-storage-engine`),
 /// separate from the dashboard's own HTTP server.
 pub fn router(store: BlobStore) -> Router {
     Router::new()

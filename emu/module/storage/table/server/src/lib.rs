@@ -27,7 +27,7 @@ use emu_storage_table_core::{CoreError, EntityView, TableStore};
 
 /// Builds the axum router implementing the Table REST wire protocol over `store`. Bind this
 /// to its own dedicated port per Storage account instance (see the unified `StorageEngine`
-/// in `emu-storage-blob-engine`), separate from the dashboard's own HTTP server.
+/// in `emu-storage-engine`), separate from the dashboard's own HTTP server.
 pub fn router(store: TableStore) -> Router {
     Router::new()
         .route("/:account/Tables", axum::routing::post(create_table).get(list_tables))

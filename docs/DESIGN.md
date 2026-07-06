@@ -75,19 +75,27 @@ emu/
 │   │   ├── amqp/                       # emu-servicebus-amqp: AMQP 1.0 (+AMQPS) wire protocol
 │   │   └── engine/                     # emu-servicebus-engine: EmulatorEngine impl + REST API
 │   └── storage/
-│       └── blob/
-│           ├── core/                   # emu-storage-blob-core: BlobStore (containers/blobs)
-│           ├── server/                 # emu-storage-blob-server: Blob REST wire protocol
-│           └── engine/                 # emu-storage-blob-engine: EmulatorEngine impl + REST API
+│       ├── blob/
+│       │   ├── core/                   # emu-storage-blob-core: BlobStore (containers/blobs)
+│       │   └── server/                 # emu-storage-blob-server: Blob REST wire protocol
+│       ├── queue/
+│       │   ├── core/                   # emu-storage-queue-core: QueueStore (queues/messages)
+│       │   └── server/                 # emu-storage-queue-server: Queue REST wire protocol
+│       ├── table/
+│       │   ├── core/                   # emu-storage-table-core: TableStore (tables/entities)
+│       │   └── server/                 # emu-storage-table-server: Table REST (OData) wire protocol
+│       └── engine/                     # emu-storage-engine: unified StorageEngine (Blob+Queue+Table)
+│                                        # impl + REST API - sibling of blob/queue/table, not nested
+│                                        # inside any one of them, since it orchestrates all three
 └── ui/
     ├── web/                            # emu-web: dashboard REST API, static assets, persistence
     └── gui/                            # emu-gui: the tray binary (AzLocalDev.exe), wires everything
 ```
 
 Dependency direction is strictly inward: `emu-registry` knows nothing about Service Bus or Storage; each
-module (`emu-servicebus-*`, `emu-storage-blob-*`) is a self-contained crate providing an `EmulatorEngine`
+module (`emu-servicebus-*`, `emu-storage-*`) is a self-contained crate providing an `EmulatorEngine`
 impl plus its own REST routes, following one template (see [§5](#5-the-emulatorengine-pattern)). Adding a
-new resource kind (e.g. Storage Queue/Table) never requires touching `emu-registry` or `emu-web`/`emu-gui`
+new resource kind (e.g. a Cosmos DB emulator) never requires touching `emu-registry` or `emu-web`/`emu-gui`
 beyond one `register_kind(...)` call.
 
 ## 5. The `EmulatorEngine` pattern
@@ -113,7 +121,7 @@ pub trait EmulatorEngine: Send + Sync {
 `kind` (registered once in `emu-gui/src/main.rs`) so the dashboard's generic "New resource" flow can
 construct any kind by name alone, with no `emu-web`/`emu-registry` code needing to know concrete types.
 
-Each module additionally exposes its own small `Registry` (e.g. `ServiceBusRegistry`, `StorageBlobRegistry`)
+Each module additionally exposes its own small `Registry` (e.g. `ServiceBusRegistry`, `StorageRegistry`)
 - a `HashMap<id, Arc<ConcreteEngine>>` - so that module's own REST routes can call concrete methods (e.g.
   `ServiceBusEngine::connection_string()`) without downcasting the generic trait object.
 
@@ -133,7 +141,7 @@ Each module additionally exposes its own small `Registry` (e.g. `ServiceBusRegis
   override, needed so Azure SDK clients can derive a 16-byte GUID lock token from it (upstream only exposes
   a fixed 4-byte auto-generated tag).
 
-## 7. Storage (Blob) module
+## 7. Storage module (Blob + Queue + Table)
 
 - **`emu-storage-blob-core`**: `BlobStore` - containers + block blobs (bytes + content-type/etag/metadata),
   plain in-memory `DashMap`-backed, no I/O.
@@ -141,13 +149,22 @@ Each module additionally exposes its own small `Registry` (e.g. `ServiceBusRegis
   `/{account}/{container}/{blob}`, Azurite's `devstoreaccount1` convention) over `BlobStore` - container
   create/delete/list, single-shot block blob upload/download/delete/list, `x-ms-meta-*` metadata. Auth is
   fully permissive (no signature/SAS validation), same philosophy as the AMQP listener.
-- **`emu-storage-blob-engine`**: wires the two into a runnable `BlobEngine`, running **two** listeners per
-  instance:
+- **`emu-storage-queue-core`**/**`emu-storage-queue-server`** and **`emu-storage-table-core`**/
+  **`emu-storage-table-server`** follow the identical core/server split for Queue Storage and Table Storage
+  respectively - each a plain in-memory store + the real respective REST wire protocol.
+- **`emu-storage-engine`**: wires all three cores + their HTTP servers into one runnable `StorageEngine` -
+  a single emulated Storage *account*, exactly like a real Azure Storage account or an Azurite instance.
+  Lives at `emu/module/storage/engine` (a sibling of `blob`/`queue`/`table`, not nested inside `blob`)
+  since it orchestrates all three services, not just Blob. Runs **four** listeners per instance:
   - Plain HTTP on the assigned port (starts at `10000`) - for account-key connection strings.
   - HTTPS on `<port> + 10000` (e.g. `20000`) - for `TokenCredential`-based (Managed Identity-style) clients,
     using the shared dev cert (see [§9](#9-shared-dev-tls-certificate-emu-dev-cert)). Azure Core's
     bearer-token auth policy refuses to send a token over plain HTTP, so this second listener is required
     for that auth style to work at all.
+  - Plain HTTP Queue and Table listeners on `<port> + 1`/`<port> + 2`, matching Azurite's own port
+    convention.
+  All Blob/Queue/Table contents persist together in one combined per-instance JSON file (see
+  `emu-persistence`, [§10](#10-persistence)).
 - Deliberately out of scope for now: append/page blobs, leases, snapshots/versioning, soft delete, tiers/tags.
 - **Not yet emulated**: Storage Queue and Table services. This means the Blob emulator alone is *not* a full
   `AzureWebJobsStorage` replacement for apps using Durable Functions, blob-trigger polling, or queue
@@ -196,7 +213,7 @@ Two independent, complementary layers, both under `%APPDATA%/AzLocalDev/`:
   resource's own `config()` blob - e.g. the assigned port). Rewritten on every create/rename/delete of a
   group or a resource inside it. Loaded automatically on startup (`emu_web::load_all_groups`) - there is no
   manual "save session" step; everything is always in sync.
-- **Per-instance data** (`data/service-bus/{id}.json`, `data/storage-blob/{id}.json`, owned by each engine
+- **Per-instance data** (`data/service-bus/{id}.json`, `data/storage/{id}.json`, owned by each engine
   module): the actual queue/message or container/blob contents for one instance, flushed on a background
   timer (every 5s) and on clean shutdown. Each file stamps its own owning instance `id` in the content
   (`PersistedInstanceData { id, ..dump }`), verified on load against the filename-implied id - a mismatch is
@@ -210,7 +227,7 @@ instances can never collide.
 
 - `emu-web` exposes the generic control API (`/api/resource-groups`, `/api/engines`, `/api/resource-kinds`)
   plus static asset serving (embedded HTML/CSS/JS under `emu/ui/web/assets/`); each resource module nests
-  its own REST routes (`/api/service-bus`, `/api/storage-blob`) alongside it in `emu-gui/src/main.rs`.
+  its own REST routes (`/api/service-bus`, `/api/storage`) alongside it in `emu-gui/src/main.rs`.
 - The frontend (`assets/index.html` + `app.js` + `style.css`) is a small vanilla-JS single-page app: sidebar
   nav (Running Resources / Resources-by-kind / Resource Groups), a generic "New resource" flow driven by
   `/api/resource-kinds`, a global search box, and per-kind detail views (Service Bus queues/messages,
