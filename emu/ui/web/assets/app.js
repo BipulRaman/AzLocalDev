@@ -250,6 +250,7 @@ async function checkForUpdates(silent) {
 }
 
 el("check-updates-btn")?.addEventListener("click", () => checkForUpdates(false));
+el("about-btn")?.addEventListener("click", () => openModal("modal-about"));
 
 (async function initVersion() {
   try {
@@ -281,11 +282,16 @@ el("check-updates-btn")?.addEventListener("click", () => checkForUpdates(false))
   const MIN_WIDTH = 180;
   const MAX_WIDTH = 480;
   const STORAGE_KEY = "sidebarWidth";
+  // `.topbar-brand`'s width has to be shorter than the sidebar's by exactly the topbar's own
+  // left padding (14px, `.topbar-global`) plus its flex `gap` before the search box (16px) -
+  // that's the only way the search box's left edge (padding + brand width + gap) lands
+  // exactly on the sidebar's right border below it, instead of drifting 30px too far right.
+  const BRAND_WIDTH_OFFSET = 30;
 
   function applyWidth(px) {
     const width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, px));
     sidebar.style.width = `${width}px`;
-    if (brand) brand.style.width = `${width}px`;
+    if (brand) brand.style.width = `${Math.max(0, width - BRAND_WIDTH_OFFSET)}px`;
     return width;
   }
 
@@ -354,6 +360,14 @@ el("rename-form").addEventListener("submit", async (ev) => {
 function kindDisplayName(kind) {
   const k = kindCache.find((x) => x.kind === kind);
   return k ? k.display_name : kind;
+}
+
+/** Shortened label for the left nav only (which has limited width) - e.g. "Storage (Blob +
+ * Queue + Table)" just becomes "Storage" there. Every other place (page headings, the "New
+ * resource" kind picker, the Type column, etc.) still uses the full `display_name`. */
+const KIND_NAV_LABELS = { storage: "Storage" };
+function kindNavLabel(k) {
+  return KIND_NAV_LABELS[k.kind] || k.display_name;
 }
 
 function closeGlobalSearch() {
@@ -652,10 +666,10 @@ function renderSidebar() {
     kindLink.href = "#";
     kindLink.className = "nav-item nav-group-link";
     kindLink.dataset.kind = k.kind;
-    kindLink.title = `${count} resource${count === 1 ? "" : "s"}, ${ofKind.filter((e) => e.running).length} running`;
+    kindLink.title = `${k.display_name} - ${count} resource${count === 1 ? "" : "s"}, ${ofKind.filter((e) => e.running).length} running`;
     kindLink.innerHTML = `
       <span class="dot ${anyRunning ? "dot-on" : "dot-off"}"></span>
-      <span class="nav-item-label">${k.display_name}</span>
+      <span class="nav-item-label">${kindNavLabel(k)}</span>
       <span class="count-chip ${count > 0 ? "has-value" : ""}">${count}</span>
     `;
     kindLink.addEventListener("click", (ev) => {

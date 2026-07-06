@@ -128,6 +128,38 @@ body {
 .search-result-type { color: var(--text-faint); font-size: 11px; flex-shrink: 0; }
 .search-empty { padding: 10px 9px; color: var(--text-faint); font-size: 12.5px; }
 
+/* Pinned to the far right of the topbar - `.topbar-search` only grows up to its own
+   max-width, so this needs `margin-left: auto` rather than relying on leftover flex space. */
+.topbar-about-btn { margin-left: auto; }
+
+/* ------------------------------------------------------------------- about modal */
+
+.about-modal { position: relative; text-align: center; }
+.modal-close-x {
+  position: absolute; top: 14px; right: 14px; appearance: none; border: none; background: none;
+  padding: 4px; color: var(--text-faint); cursor: pointer; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.modal-close-x svg { width: 18px; height: 18px; }
+.modal-close-x:hover { background: var(--border-soft); color: var(--text); }
+.about-brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 4px; }
+.about-brand h2 { margin: 0; }
+.about-icon { width: 40px; height: 40px; }
+.about-tagline { font-size: 13.5px; color: var(--text-muted); }
+.about-tagline a { color: var(--primary); font-weight: 600; text-decoration: none; }
+.about-tagline a:hover { text-decoration: underline; }
+.about-emoji { font-style: normal; }
+.india-flag { width: 20px; height: 13.3px; vertical-align: -2px; border-radius: 1.5px; box-shadow: 0 0 0 1px var(--border-soft); }
+.about-github-link {
+  display: inline-flex; align-items: center; gap: 8px; margin: 4px 0 4px 0;
+  padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  color: var(--text); text-decoration: none; font-weight: 500; font-size: 13px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.about-github-link:hover { background: var(--border-soft); border-color: var(--text-faint); }
+.about-github-link svg { width: 16px; height: 16px; flex-shrink: 0; }
+
 /* ---------------------------------------------------------------- layout */
 
 .app-shell {
