@@ -165,7 +165,8 @@ fn main() -> anyhow::Result<()> {
     } else {
         // First-ever run (nothing persisted yet): create the same default this app has
         // always started with, and persist it immediately so it shows up on disk right away
-        // rather than only after the user's first edit.
+        // rather than only after the user's first edit. Left OFF - every resource always
+        // starts in the "off" state; the user turns it on from the dashboard when needed.
         let service_bus = Arc::new(ServiceBusEngine::new(
             "service-bus-1",
             "Service Bus",
@@ -175,11 +176,6 @@ fn main() -> anyhow::Result<()> {
         let default_group = registry.create_group("Default", None);
         registry.register(service_bus.clone(), &default_group.id);
         sb_registry.insert(service_bus.clone());
-        runtime.block_on(async {
-            if let Err(err) = service_bus.start().await {
-                tracing::error!(?err, "failed to autostart Service Bus emulator");
-            }
-        });
         emu_web::persist_group(&registry, &default_group.id);
     }
 

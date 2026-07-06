@@ -393,6 +393,20 @@ th.col-toggle, td.col-toggle, th.col-actions, td.col-actions { width: 1%; white-
 .switch-lg .track::before { width: 20px; height: 20px; }
 .switch-lg input:checked + .track::before { transform: translateX(18px); }
 
+/* Shown in place of the toggle knob while a resource is being started, so the user gets
+   clear feedback instead of just a briefly-disabled switch (starting can take a moment -
+   TLS cert generation, port binding, restoring persisted queue/blob data, etc.). Always
+   present in the markup; `.switch.loading` is what actually reveals it (and dims the
+   track). Cleared implicitly on the next re-render once the resource reports as running. */
+.switch-spinner {
+  display: none; position: absolute; inset: 0; align-items: center; justify-content: center; pointer-events: none;
+}
+.switch-spinner svg { width: 12px; height: 12px; color: var(--text-muted); animation: switch-spin 0.7s linear infinite; }
+.switch-lg .switch-spinner svg { width: 14px; height: 14px; }
+.switch.loading .track { opacity: 0.35; }
+.switch.loading .switch-spinner { display: flex; }
+@keyframes switch-spin { to { transform: rotate(360deg); } }
+
 /* ------------------------------------------------------------------ misc */
 
 /* Plain `<select>` dropdowns used outside modals (e.g. command-bar filters) - modals style

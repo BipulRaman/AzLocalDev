@@ -2,6 +2,9 @@
 # only the compiled artifacts under target/ are ignored)
 /target/
 /test/
+# Local ad-hoc release copies (e.g. `cargo build --release` output copied out for manual
+# testing/distribution) - not produced by any tracked build step, never committed.
+/dist/
 # vendor/fe2o3-amqp is an intentionally checked-in, patched dependency (see
 # [patch.crates-io] in Cargo.toml) - do NOT ignore it.
 

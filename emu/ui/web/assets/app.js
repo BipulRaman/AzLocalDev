@@ -699,6 +699,18 @@ async function refreshAll() {
   if (view === "dashboard") renderGroupsTable();
   if (view === "group") renderGroupResources();
   if (view === "all-resources") renderAllResources();
+  if (view === "running") renderRunningResources();
+  if (view === "kind") renderKindResources();
+}
+
+/** Shows/hides the small spinner overlaid on a `.switch` toggle while its resource is being
+ * turned on - the actual disabled state is cleared implicitly whenever the row is next
+ * re-rendered (from fresh `engineCache`/`groupCache` data), so callers don't need to
+ * remember to turn it back off themselves. */
+function setSwitchLoading(input, loading) {
+  input.disabled = loading;
+  const switchEl = input.closest(".switch");
+  if (switchEl) switchEl.classList.toggle("loading", loading);
 }
 
 /** Starts or stops every resource inside `groupId` in one call. */
@@ -726,7 +738,8 @@ el("group-toggle-input").addEventListener("change", async (ev) => {
   if (!currentGroupId) return;
   const input = ev.target;
   const enable = input.checked;
-  input.disabled = true;
+  if (enable) setSwitchLoading(input, true);
+  else input.disabled = true;
   await setGroupRunning(currentGroupId, enable);
 });
 
@@ -753,6 +766,7 @@ function renderGroupsTable() {
         <label class="switch" title="Enable or disable every resource in this group">
           <input type="checkbox" data-group-toggle="${g.id}" data-enabled="${info.any}" ${info.any ? "checked" : ""} ${count === 0 ? "disabled" : ""} />
           <span class="track"></span>
+          <span class="switch-spinner"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="24 100"/></svg></span>
         </label>
       </td>
       <td class="link-cell" data-open-group="${g.id}">${g.name}</td>
@@ -776,7 +790,8 @@ function renderGroupsTable() {
       ev.stopPropagation();
       const id = input.getAttribute("data-group-toggle");
       const enabled = input.getAttribute("data-enabled") === "true";
-      input.disabled = true;
+      if (!enabled) setSwitchLoading(input, true);
+      else input.disabled = true;
       await setGroupRunning(id, !enabled);
     });
   });
@@ -815,6 +830,7 @@ function engineRow(eng) {
       <label class="switch" title="${eng.running ? "Stop" : "Start"}">
         <input type="checkbox" data-toggle="${eng.id}" data-running="${eng.running}" ${eng.running ? "checked" : ""} />
         <span class="track"></span>
+        <span class="switch-spinner"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="24 100"/></svg></span>
       </label>
     </td>
     <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
@@ -859,7 +875,8 @@ function wireEngineRowEvents(body) {
       ev.stopPropagation();
       const id = input.getAttribute("data-toggle");
       const running = input.getAttribute("data-running") === "true";
-      input.disabled = true;
+      if (!running) setSwitchLoading(input, true);
+      else input.disabled = true;
       try {
         await api(`/api/engines/${id}/${running ? "stop" : "start"}`, { method: "POST" });
         toast("success", running ? "Resource stopped" : "Resource started");
@@ -1013,6 +1030,7 @@ function runningRow(eng) {
       <label class="switch" title="Stop">
         <input type="checkbox" data-toggle="${eng.id}" data-running="true" checked />
         <span class="track"></span>
+        <span class="switch-spinner"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="24 100"/></svg></span>
       </label>
     </td>
     <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
@@ -1030,6 +1048,7 @@ function kindRow(eng) {
       <label class="switch" title="${eng.running ? "Stop" : "Start"}">
         <input type="checkbox" data-toggle="${eng.id}" data-running="${eng.running}" ${eng.running ? "checked" : ""} />
         <span class="track"></span>
+        <span class="switch-spinner"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="24 100"/></svg></span>
       </label>
     </td>
     <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>
@@ -1054,6 +1073,7 @@ function allResourcesRow(eng) {
       <label class="switch" title="${eng.running ? "Stop" : "Start"}">
         <input type="checkbox" data-toggle="${eng.id}" data-running="${eng.running}" ${eng.running ? "checked" : ""} />
         <span class="track"></span>
+        <span class="switch-spinner"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="24 100"/></svg></span>
       </label>
     </td>
     <td class="link-cell" data-open-resource="${eng.id}">${eng.display_name}</td>

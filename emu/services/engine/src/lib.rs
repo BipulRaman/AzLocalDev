@@ -283,9 +283,12 @@ impl EngineRegistry {
     }
 
     /// Recreates a specific instance from a persisted group snapshot (fixed id + config),
-    /// auto-starts it, and registers it into `group_id`. If `id` is already registered
-    /// (e.g. a corrupted/duplicated persisted group file listed the same resource id twice,
-    /// either within one group or across two different group files), the existing engine is
+    /// and registers it into `group_id` - WITHOUT starting it. Every resource always comes
+    /// back up in the "off" state on app startup (regardless of whether it was running when
+    /// the app last closed); the user turns instances back on individually from the
+    /// dashboard once they actually need them. If `id` is already registered (e.g. a
+    /// corrupted/duplicated persisted group file listed the same resource id twice, either
+    /// within one group or across two different group files), the existing engine is
     /// returned as-is and no second instance is created - starting a second engine with the
     /// same id would spawn a second listener racing the first for the same ports, silently
     /// splitting state between two independent in-memory instances that both claim the same
@@ -319,7 +322,6 @@ impl EngineRegistry {
         };
 
         let engine = factory(id, name.to_string(), Some(config));
-        engine.start().await?;
         let mut state = self.state.lock().unwrap();
         state
             .engine_groups
