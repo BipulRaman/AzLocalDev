@@ -1,7 +1,7 @@
 # Cargo build output (this is an application workspace, so Cargo.lock IS committed -
 # only the compiled artifacts under target/ are ignored)
 /target/
-
+/test/
 # vendor/fe2o3-amqp is an intentionally checked-in, patched dependency (see
 # [patch.crates-io] in Cargo.toml) - do NOT ignore it.
 
