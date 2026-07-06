@@ -9,9 +9,10 @@
 //! One instance = one emulated Storage *account*, exactly like a real Azure Storage account
 //! or an Azurite instance: three sequential ports starting at the instance's base port
 //! (`base` = Blob, `base+1` = Queue, `base+2` = Table), matching Azurite's own
-//! `10000`/`10001`/`10002` convention. Queue and Table contents are intentionally **not**
-//! persisted to disk across restarts (see `emu-storage-queue-core`'s doc comment for the
-//! rationale) - only Blob data is, same as before this module grew Queue/Table support.
+//! `10000`/`10001`/`10002` convention. Blob/Queue/Table contents are ALL persisted to disk
+//! across restarts, in one combined JSON file per instance (see [`PersistedInstanceData`]) -
+//! the only thing that doesn't survive a restart is an in-flight queue-message lease
+//! (`pop_receipt`), see `emu-storage-queue-core::model::MessageDump`'s doc comment.
 //!
 //! Follows the same template as `emu-servicebus-engine`: a self-contained crate providing
 //! an `EmulatorEngine` impl + its own API routes, with `emu/services/engine` and
@@ -37,8 +38,8 @@ use tokio::task::JoinHandle;
 
 use emu_registry::EmulatorEngine;
 use emu_storage_blob_core::{BlobStore, ContainerSummary, CoreError, StoreDump};
-use emu_storage_queue_core::{CoreError as QueueCoreError, MessageView, QueueStore, QueueSummary};
-use emu_storage_table_core::{CoreError as TableCoreError, EntityView, TableStore, TableSummary};
+use emu_storage_queue_core::{CoreError as QueueCoreError, MessageView, QueueStore, QueueStoreDump, QueueSummary};
+use emu_storage_table_core::{CoreError as TableCoreError, EntityView, TableStore, TableStoreDump, TableSummary};
 
 /// How often the running Blob store's state is flushed to disk in the background - the same
 /// crash-safety net `emu-servicebus-engine` uses, since `StorageEngine::stop()` never runs on
@@ -208,18 +209,30 @@ fn sanitize_id(id: &str) -> String {
         .collect()
 }
 
-/// On-disk shape of a Storage (Blob) instance's persisted container/blob data: the store
-/// dump plus the owning instance's `id` stamped directly in the content, so the data is
+/// On-disk shape of a Storage instance's persisted Blob/Queue/Table data: the three stores'
+/// dumps plus the owning instance's `id` stamped directly in the content, so the data is
 /// self-describing and can always be verified/looked up by id instead of trusting the
-/// filename alone.
+/// filename alone. `queue_dump`/`table_dump` default to empty when absent so older,
+/// Blob-only persisted files (from before this module persisted Queue/Table too) still load.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedInstanceData {
     id: String,
     #[serde(flatten)]
     dump: StoreDump,
+    #[serde(default)]
+    queue_dump: QueueStoreDump,
+    #[serde(default)]
+    table_dump: TableStoreDump,
 }
 
-fn load_dump(path: &StdPath, expected_id: &str) -> Option<StoreDump> {
+/// Everything restored from one instance's persisted data file.
+struct RestoredData {
+    blob: StoreDump,
+    queue: QueueStoreDump,
+    table: TableStoreDump,
+}
+
+fn load_dump(path: &StdPath, expected_id: &str) -> Option<RestoredData> {
     let text = std::fs::read_to_string(path).ok()?;
     match serde_json::from_str::<PersistedInstanceData>(&text) {
         Ok(data) => {
@@ -228,28 +241,34 @@ fn load_dump(path: &StdPath, expected_id: &str) -> Option<StoreDump> {
                     path = %path.display(),
                     stamped_id = %data.id,
                     %expected_id,
-                    "persisted Storage (Blob) state's stamped id doesn't match this instance, refusing to load it"
+                    "persisted Storage state's stamped id doesn't match this instance, refusing to load it"
                 );
                 return None;
             }
-            Some(data.dump)
+            Some(RestoredData {
+                blob: data.dump,
+                queue: data.queue_dump,
+                table: data.table_dump,
+            })
         }
         Err(err) => {
-            tracing::warn!(?err, path = %path.display(), "failed to parse persisted Storage (Blob) state, starting empty");
+            tracing::warn!(?err, path = %path.display(), "failed to parse persisted Storage state, starting empty");
             None
         }
     }
 }
 
-async fn save_store_state(store: &BlobStore, path: &StdPath, id: &str) {
+async fn save_store_state(store: &BlobStore, queue_store: &QueueStore, table_store: &TableStore, path: &StdPath, id: &str) {
     let data = PersistedInstanceData {
         id: id.to_string(),
         dump: store.dump(),
+        queue_dump: queue_store.dump(),
+        table_dump: table_store.dump(),
     };
     match serde_json::to_vec_pretty(&data) {
         Ok(bytes) => {
             if let Err(err) = std::fs::write(path, bytes) {
-                tracing::warn!(?err, path = %path.display(), "failed to persist Storage (Blob) state");
+                tracing::warn!(?err, path = %path.display(), "failed to persist Storage state");
             }
         }
         Err(err) => tracing::warn!(?err, "failed to serialize Storage (Blob) state"),
@@ -281,11 +300,12 @@ impl EmulatorEngine for StorageEngine {
         }
 
         let data_file = self.data_file();
-        let store = match load_dump(&data_file, &self.id) {
-            Some(dump) => {
-                tracing::info!(path = %data_file.display(), "restored persisted Storage (Blob) state");
-                BlobStore::restore(dump)
-            }
+        let restored = load_dump(&data_file, &self.id);
+        if restored.is_some() {
+            tracing::info!(path = %data_file.display(), "restored persisted Storage state");
+        }
+        let store = match restored.as_ref() {
+            Some(r) => BlobStore::restore(r.blob.clone()),
             None => BlobStore::new(),
         };
 
@@ -298,10 +318,10 @@ impl EmulatorEngine for StorageEngine {
             }
         });
 
-        // Queue and Table contents aren't persisted (see the crate-level doc comment), so
-        // each start is always a fresh, empty store - unlike Blob, there's no dump to
-        // restore here.
-        let queue_store = QueueStore::new();
+        let queue_store = match restored.as_ref() {
+            Some(r) => QueueStore::restore(r.queue.clone()),
+            None => QueueStore::new(),
+        };
         let queue_addr: SocketAddr = format!("127.0.0.1:{}", self.queue_port()).parse()?;
         let queue_listener = tokio::net::TcpListener::bind(queue_addr).await?;
         let queue_router = emu_storage_queue_server::router(queue_store.clone());
@@ -311,7 +331,10 @@ impl EmulatorEngine for StorageEngine {
             }
         });
 
-        let table_store = TableStore::new();
+        let table_store = match restored.as_ref() {
+            Some(r) => TableStore::restore(r.table.clone()),
+            None => TableStore::new(),
+        };
         let table_addr: SocketAddr = format!("127.0.0.1:{}", self.table_port()).parse()?;
         let table_listener = tokio::net::TcpListener::bind(table_addr).await?;
         let table_router = emu_storage_table_server::router(table_store.clone());
@@ -349,6 +372,8 @@ impl EmulatorEngine for StorageEngine {
         };
 
         let store_for_autosave = store.clone();
+        let queue_store_for_autosave = queue_store.clone();
+        let table_store_for_autosave = table_store.clone();
         let autosave_path = data_file.clone();
         let autosave_id = self.id.clone();
         let autosave_handle = tokio::spawn(async move {
@@ -356,7 +381,7 @@ impl EmulatorEngine for StorageEngine {
             ticker.tick().await; // first tick fires immediately; skip it, state is already empty/fresh
             loop {
                 ticker.tick().await;
-                save_store_state(&store_for_autosave, &autosave_path, &autosave_id).await;
+                save_store_state(&store_for_autosave, &queue_store_for_autosave, &table_store_for_autosave, &autosave_path, &autosave_id).await;
             }
         });
 
@@ -384,7 +409,7 @@ impl EmulatorEngine for StorageEngine {
         let mut guard = self.state.lock().await;
         if let Some(state) = guard.take() {
             state.autosave_handle.abort();
-            save_store_state(&state.store, &self.data_file(), &self.id).await;
+            save_store_state(&state.store, &state.queue_store, &state.table_store, &self.data_file(), &self.id).await;
             state.handle.abort();
             state.https_handle.abort();
             state.queue_handle.abort();

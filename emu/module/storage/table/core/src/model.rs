@@ -1,7 +1,7 @@
 //! Serializable view types for the dashboard/API and the OData JSON wire protocol.
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Map;
 
 /// Dashboard/API view of one table (no entity contents).
@@ -24,3 +24,26 @@ pub struct EntityView {
     pub etag: String,
     pub properties: Map<String, serde_json::Value>,
 }
+
+/// Whole-store snapshot, serialized alongside the Blob/Queue dumps in this instance's
+/// `%APPDATA%/AzLocalDev/data/storage-blob/{id}.json` file (see `emu-storage-blob-engine`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TableStoreDump {
+    pub tables: Vec<TableDump>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableDump {
+    pub name: String,
+    pub entities: Vec<EntityDump>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityDump {
+    pub partition_key: String,
+    pub row_key: String,
+    pub timestamp: DateTime<Utc>,
+    pub etag: String,
+    pub properties: Map<String, serde_json::Value>,
+}
+

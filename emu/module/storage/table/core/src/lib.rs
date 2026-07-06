@@ -3,8 +3,10 @@
 //! This crate has no networking/protocol code in it at all - it is a plain thread-safe
 //! in-memory store of tables and entities. The wire protocol (Azure Table REST API's OData
 //! JSON, over HTTP) lives in `emu-storage-table-server`, driven purely by this store's
-//! methods. Like `emu-storage-queue-core`, table contents are intentionally **not**
-//! persisted to disk across restarts - see that crate's doc comment for the rationale.
+//! methods. Like `emu-storage-queue-core`, table/entity contents ARE persisted to disk
+//! across restarts, alongside Blob data (see `emu-storage-blob-engine`'s unified
+//! `StorageEngine::start`/`stop`/autosave, which calls this store's [`TableStore::dump`]/
+//! [`TableStore::restore`]).
 //!
 //! Query support is intentionally minimal: this crate only understands "give me every
 //! entity in a table" and "give me the one entity at this exact PartitionKey/RowKey" -
@@ -15,7 +17,7 @@ mod error;
 mod model;
 
 pub use error::{CoreError, CoreResult};
-pub use model::{EntityView, TableSummary};
+pub use model::{EntityDump, EntityView, TableDump, TableStoreDump, TableSummary};
 
 use std::sync::Arc;
 
@@ -203,6 +205,58 @@ impl TableStore {
             .filter(|entry| partition_key.is_none_or(|pk| entry.key().0 == pk))
             .map(|entry| entry.value().to_view(&entry.key().0, &entry.key().1))
             .collect())
+    }
+
+    // ------------------------------------------------------------ persistence
+
+    /// Captures the whole store as a serializable [`TableStoreDump`].
+    pub fn dump(&self) -> TableStoreDump {
+        let mut tables: Vec<TableDump> = self
+            .tables
+            .iter()
+            .map(|entry| {
+                let name = entry.key().clone();
+                let entities = entry
+                    .value()
+                    .entities
+                    .iter()
+                    .map(|e| {
+                        let (partition_key, row_key) = e.key().clone();
+                        let entity = e.value();
+                        EntityDump {
+                            partition_key,
+                            row_key,
+                            timestamp: entity.timestamp,
+                            etag: entity.etag.clone(),
+                            properties: entity.properties.clone(),
+                        }
+                    })
+                    .collect();
+                TableDump { name, entities }
+            })
+            .collect();
+        tables.sort_by(|a, b| a.name.cmp(&b.name));
+        TableStoreDump { tables }
+    }
+
+    /// Rebuilds a store from a previously-captured [`TableStoreDump`] (loaded from disk).
+    pub fn restore(dump: TableStoreDump) -> Self {
+        let store = Self::new();
+        for table in dump.tables {
+            let entities = DashMap::new();
+            for e in table.entities {
+                entities.insert(
+                    (e.partition_key, e.row_key),
+                    Entity {
+                        properties: e.properties,
+                        timestamp: e.timestamp,
+                        etag: e.etag,
+                    },
+                );
+            }
+            store.tables.insert(table.name, TableState { entities });
+        }
+        store
     }
 }
 

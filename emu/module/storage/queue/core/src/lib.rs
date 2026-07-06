@@ -4,19 +4,18 @@
 //! in-memory store of queues and messages. The wire protocol (Azure Queue REST API over
 //! HTTP) lives in `emu-storage-queue-server`, driven purely by this store's methods.
 //!
-//! Unlike Blob storage, queue contents are intentionally **not** persisted to disk across
-//! restarts - a message's in-flight lease (`pop_receipt`) is inherently tied to a single
+//! Queue/message contents ARE persisted to disk across restarts, alongside Blob data (see
+//! `emu-storage-blob-engine`'s unified `StorageEngine::start`/`stop`/autosave, which calls
+//! this store's [`QueueStore::dump`]/[`QueueStore::restore`]). The one thing that does NOT
+//! survive a restart is an in-flight lease (`pop_receipt`) - it's inherently tied to a single
 //! process's lifetime (real Azure Queue Storage doesn't survive a client crash mid-lease
-//! either, beyond the visibility timeout), and queues are typically used as transient work
-//! queues rather than a durable record store, unlike blobs. Only the queue *names* need to
-//! survive (recreated fresh, empty) - see `emu-storage-blob-engine`'s unified `StorageEngine`
-//! for how instance config (ports) is persisted instead.
+//! either, beyond the visibility timeout) - see [`model::MessageDump`]'s doc comment.
 
 mod error;
 mod model;
 
 pub use error::{CoreError, CoreResult};
-pub use model::{MessageView, QueueSummary};
+pub use model::{MessageDump, MessageView, QueueDump, QueueStoreDump, QueueSummary};
 
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -233,6 +232,71 @@ impl QueueStore {
         let state = self.queues.get(queue).ok_or_else(|| CoreError::QueueNotFound(queue.to_string()))?;
         state.messages.lock().unwrap().clear();
         Ok(())
+    }
+
+    // ------------------------------------------------------------ persistence
+
+    /// Captures the whole store as a serializable [`QueueStoreDump`].
+    pub fn dump(&self) -> QueueStoreDump {
+        let mut queues: Vec<QueueDump> = self
+            .queues
+            .iter()
+            .map(|entry| {
+                let name = entry.key().clone();
+                let state = entry.value();
+                let messages = state
+                    .messages
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|m| MessageDump {
+                        id: m.id.clone(),
+                        body: m.body.clone(),
+                        insertion_time: m.insertion_time,
+                        expiration_time: m.expiration_time,
+                        next_visible_time: m.next_visible_time,
+                        dequeue_count: m.dequeue_count,
+                    })
+                    .collect();
+                QueueDump {
+                    name,
+                    created_at: state.created_at,
+                    messages,
+                }
+            })
+            .collect();
+        queues.sort_by(|a, b| a.name.cmp(&b.name));
+        QueueStoreDump { queues }
+    }
+
+    /// Rebuilds a store from a previously-captured [`QueueStoreDump`] (loaded from disk).
+    /// Every message comes back unleased (see [`MessageDump`]'s doc comment) regardless of
+    /// whether it had an in-flight `pop_receipt` at the time it was dumped.
+    pub fn restore(dump: QueueStoreDump) -> Self {
+        let store = Self::new();
+        for queue in dump.queues {
+            let messages = queue
+                .messages
+                .into_iter()
+                .map(|m| Message {
+                    id: m.id,
+                    body: m.body,
+                    insertion_time: m.insertion_time,
+                    expiration_time: m.expiration_time,
+                    next_visible_time: m.next_visible_time,
+                    dequeue_count: m.dequeue_count,
+                    pop_receipt: None,
+                })
+                .collect();
+            store.queues.insert(
+                queue.name,
+                QueueState {
+                    created_at: queue.created_at,
+                    messages: StdMutex::new(messages),
+                },
+            );
+        }
+        store
     }
 }
 
