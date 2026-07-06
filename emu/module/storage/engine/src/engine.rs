@@ -347,10 +347,22 @@ impl EmulatorEngine for StorageEngine {
                 table_dump: state.table_store.dump(),
             };
             emu_persistence::save(&self.data_file(), &self.id, dump, "Storage");
+            // `.abort()` only *requests* cancellation - the task (and the TCP listener it
+            // owns) may not actually finish unwinding/dropping until its next await point,
+            // which could be after `stop()` already returned. Awaiting each handle blocks
+            // until that actually happens (resolving to an `Err` `JoinError` since it was
+            // cancelled, which is expected and fine to ignore), so the OS socket is
+            // genuinely released before a caller can act on `stop()` having completed - e.g.
+            // immediately calling `start()` again on the same port, which would otherwise
+            // occasionally fail with a spurious "port already in use" race.
             state.handle.abort();
             state.https_handle.abort();
             state.queue_handle.abort();
             state.table_handle.abort();
+            let _ = state.handle.await;
+            let _ = state.https_handle.await;
+            let _ = state.queue_handle.await;
+            let _ = state.table_handle.await;
             tracing::info!("Storage emulator stopped");
         }
         Ok(())
@@ -383,3 +395,108 @@ impl EmulatorEngine for StorageEngine {
         serde_json::json!({ "port": self.port })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+
+    /// Serializes every test in this module: they all mutate the process-global
+    /// `emu_persistence::DATA_DIR_OVERRIDE_ENV` env var, so running them concurrently
+    /// (`cargo test`'s default) would let one test's override leak into another's.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// An isolated `%APPDATA%/AzLocalDev` stand-in for one test, cleaned up on drop.
+    struct TempDataDir {
+        path: PathBuf,
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TempDataDir {
+        fn new() -> Self {
+            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+            let path = std::env::temp_dir().join(format!("azlocaldev-storage-engine-test-{}-{n}", std::process::id()));
+            std::fs::create_dir_all(&path).unwrap();
+            std::env::set_var(emu_persistence::DATA_DIR_OVERRIDE_ENV, &path);
+            Self { path, _guard: guard }
+        }
+    }
+
+    impl Drop for TempDataDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+            std::env::remove_var(emu_persistence::DATA_DIR_OVERRIDE_ENV);
+        }
+    }
+
+    /// Test-only base port, well away from the real default (`10000`) so this can never
+    /// collide with a real running instance on the same machine. Each instance reserves a
+    /// block of 3 (Blob/Queue/Table) plus HTTPS at `+10000`, matching production's scheme.
+    fn next_test_port() -> u16 {
+        static NEXT: AtomicU16 = AtomicU16::new(38_000);
+        NEXT.fetch_add(3, Ordering::SeqCst)
+    }
+
+    /// Full lifecycle test: start an engine, write Blob/Queue/Table data into it, stop it
+    /// (which persists all three to one combined file per `PERSISTENCE_MODULE`), then start
+    /// a BRAND NEW engine instance with the same id and verify all three kinds of data
+    /// survived the round trip - this is what actually exercises `StorageEngine::start`/
+    /// `stop`'s integration with `emu_persistence`, as opposed to only unit-testing the
+    /// low-level save/load functions or each store's own `dump`/`restore` in isolation.
+    #[tokio::test]
+    async fn blob_queue_table_data_survives_stop_and_restart() {
+        let _dir = TempDataDir::new();
+        let port = next_test_port();
+        let id = format!("test-storage-{port}");
+
+        let engine = StorageEngine::new(id.clone(), "Test", port);
+        engine.start().await.expect("first start should succeed");
+
+        let blob_store = engine.store().await.expect("engine should be running");
+        blob_store.put_blob(
+            "uploads",
+            "hello.txt",
+            bytes::Bytes::from_static(b"blob contents"),
+            "text/plain".to_string(),
+            HashMap::new(),
+        );
+
+        let queue_store = engine.queue_store().await.expect("engine should be running");
+        queue_store.create_queue("orders").expect("create_queue should succeed");
+        queue_store.put_message("orders", "queue message".to_string(), 0, None).expect("put_message should succeed");
+
+        let table_store = engine.table_store().await.expect("engine should be running");
+        table_store.create_table("Customers").expect("create_table should succeed");
+        let mut props = serde_json::Map::new();
+        props.insert("Name".to_string(), serde_json::json!("Ada"));
+        table_store
+            .insert_entity("Customers", "p1", "r1", props)
+            .expect("insert_entity should succeed");
+
+        engine.stop().await.expect("stop should succeed and persist state");
+
+        // A brand new engine instance (same id, so it reads the same persisted file) -
+        // simulates the app restarting, not just re-starting the same in-memory object.
+        let restarted = StorageEngine::new(id, "Test", port);
+        restarted.start().await.expect("restart should succeed");
+
+        let blob_store = restarted.store().await.expect("restarted engine should be running");
+        let blob = blob_store.get_blob("uploads", "hello.txt").expect("blob should have been restored");
+        assert_eq!(blob.data.as_ref(), b"blob contents");
+
+        let queue_store = restarted.queue_store().await.expect("restarted engine should be running");
+        let messages = queue_store.peek_messages("orders", 10).expect("peek_messages should succeed");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].body, "queue message");
+
+        let table_store = restarted.table_store().await.expect("restarted engine should be running");
+        let entity = table_store.get_entity("Customers", "p1", "r1").expect("entity should have been restored");
+        assert_eq!(entity.properties.get("Name").and_then(|v| v.as_str()), Some("Ada"));
+
+        restarted.stop().await.expect("final stop should succeed");
+    }
+}
+

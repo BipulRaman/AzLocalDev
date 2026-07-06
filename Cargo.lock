@@ -1011,6 +1011,7 @@ dependencies = [
  "async-trait",
  "axum",
  "axum-server",
+ "bytes",
  "emu-dev-cert",
  "emu-persistence",
  "emu-registry",

@@ -266,8 +266,18 @@ impl EmulatorEngine for ServiceBusEngine {
             state.autosave_handle.abort();
             let dump = state.broker.export().await;
             emu_persistence::save(&self.data_file(), &self.id, dump, "Service Bus");
+            // `.abort()` only *requests* cancellation - the task (and the TCP listener it
+            // owns) may not actually finish unwinding/dropping until its next await point,
+            // which could be after `stop()` already returned. Awaiting each handle blocks
+            // until that actually happens (resolving to an `Err` `JoinError` since it was
+            // cancelled, which is expected and fine to ignore), so the OS socket is
+            // genuinely released before a caller can act on `stop()` having completed - e.g.
+            // immediately calling `start()` again on the same port, which would otherwise
+            // occasionally fail with a spurious "port already in use" race.
             state.handle.abort();
             state.amqps_handle.abort();
+            let _ = state.handle.await;
+            let _ = state.amqps_handle.await;
             tracing::info!("Service Bus emulator stopped");
         }
         Ok(())
@@ -582,6 +592,97 @@ async fn resubmit_message(
         (status, format!("{e}"))
     })?;
     Ok(Json(ResubmitResponse { sequence_number: new_seq }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use emu_servicebus_core::{EntityOptions, NewMessage};
+    use std::sync::atomic::{AtomicU64, AtomicU8};
+
+    /// Serializes every test in this module: they all mutate the process-global
+    /// `emu_persistence::DATA_DIR_OVERRIDE_ENV` env var, so running them concurrently
+    /// (`cargo test`'s default) would let one test's override leak into another's.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// An isolated `%APPDATA%/AzLocalDev` stand-in for one test, cleaned up on drop.
+    struct TempDataDir {
+        path: PathBuf,
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TempDataDir {
+        fn new() -> Self {
+            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let path = std::env::temp_dir().join(format!("azlocaldev-sb-engine-test-{}-{n}", std::process::id()));
+            std::fs::create_dir_all(&path).unwrap();
+            std::env::set_var(emu_persistence::DATA_DIR_OVERRIDE_ENV, &path);
+            Self { path, _guard: guard }
+        }
+    }
+
+    impl Drop for TempDataDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+            std::env::remove_var(emu_persistence::DATA_DIR_OVERRIDE_ENV);
+        }
+    }
+
+    /// Test-only ports/loopback-seq, well away from the real defaults (`5672`/seq `1`) so
+    /// this can never collide with a real running instance on the same machine.
+    fn next_test_port_and_seq() -> (u16, u8) {
+        static NEXT_PORT: AtomicU64 = AtomicU64::new(28_672);
+        static NEXT_SEQ: AtomicU8 = AtomicU8::new(200);
+        let port = NEXT_PORT.fetch_add(2, std::sync::atomic::Ordering::SeqCst) as u16;
+        let seq = NEXT_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        (port, seq)
+    }
+
+    /// Full lifecycle test: start an engine, send a message into a queue, stop it (which
+    /// persists broker state to disk per `PERSISTENCE_MODULE`), then start a BRAND NEW
+    /// engine instance with the same id and verify the message survived the round trip -
+    /// this is what actually exercises `ServiceBusEngine::start`/`stop`'s integration with
+    /// `emu_persistence`, as opposed to only unit-testing the low-level save/load functions.
+    #[tokio::test]
+    async fn message_survives_stop_and_restart() {
+        let _dir = TempDataDir::new();
+        let (port, seq) = next_test_port_and_seq();
+        let id = format!("test-sb-{port}");
+
+        let engine = ServiceBusEngine::new(id.clone(), "Test", port, seq);
+        engine.start().await.expect("first start should succeed");
+
+        let broker = engine.broker().await.expect("engine should be running");
+        let queue = broker.create_queue("orders", EntityOptions::default());
+        queue
+            .send_message(NewMessage {
+                body: b"hello persistence".to_vec(),
+                ..Default::default()
+            })
+            .await
+            .expect("send should succeed");
+
+        engine.stop().await.expect("stop should succeed and persist state");
+
+        // A brand new engine instance (same id, so it reads the same persisted file) -
+        // simulates the app restarting, not just re-starting the same in-memory object.
+        let restarted = ServiceBusEngine::new(id, "Test", port, seq);
+        restarted.start().await.expect("restart should succeed");
+
+        let broker = restarted.broker().await.expect("restarted engine should be running");
+        let queue = broker.get_queue("orders").expect("queue should have been restored");
+        let messages = queue
+            .peek(MessageState::Active, 0, 10)
+            .await
+            .expect("peek should succeed");
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].body, b"hello persistence");
+
+        restarted.stop().await.expect("final stop should succeed");
+    }
 }
 
 async fn require_broker(engine: &ServiceBusEngine) -> Result<Broker, (StatusCode, String)> {

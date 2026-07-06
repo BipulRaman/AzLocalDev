@@ -15,12 +15,21 @@ use std::time::Duration;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::task::JoinHandle;
 
+/// Environment variable that, if set, overrides where [`data_dir`] resolves its base
+/// directory from (instead of `dirs::config_dir()`) - used exclusively by integration tests
+/// so they persist into an isolated temp directory instead of the real `%APPDATA%/AzLocalDev`
+/// a developer might actually have data in. Never set by the shipped application itself.
+pub const DATA_DIR_OVERRIDE_ENV: &str = "AZLOCALDEV_DATA_DIR_OVERRIDE";
+
 /// Returns (creating on demand) the directory persisted data files for one resource module
 /// live in: `%APPDATA%/AzLocalDev/data/{module_name}` (or the OS equivalent of
-/// `dirs::config_dir()`). `module_name` should be a short, stable, filesystem-safe slug like
-/// `"service-bus"` or `"storage"`.
+/// `dirs::config_dir()`), unless [`DATA_DIR_OVERRIDE_ENV`] is set. `module_name` should be a
+/// short, stable, filesystem-safe slug like `"service-bus"` or `"storage"`.
 pub fn data_dir(module_name: &str) -> PathBuf {
-    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    let base = std::env::var_os(DATA_DIR_OVERRIDE_ENV)
+        .map(PathBuf::from)
+        .or_else(dirs::config_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
     let dir = base.join("AzLocalDev").join("data").join(module_name);
     let _ = std::fs::create_dir_all(&dir);
     dir
@@ -112,3 +121,111 @@ where
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct SampleDump {
+        counter: u64,
+        label: String,
+    }
+
+    /// Each test gets its own isolated temp directory (via [`DATA_DIR_OVERRIDE_ENV`]) so
+    /// tests never touch a real `%APPDATA%/AzLocalDev` a developer might have data in.
+    /// `cargo test` runs tests within a crate in parallel by default, and the override is a
+    /// process-global env var, so a `Mutex` serializes every test that uses it - otherwise
+    /// two tests running concurrently could stomp on each other's override.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct TempDataDir {
+        path: PathBuf,
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TempDataDir {
+        fn new() -> Self {
+            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+            let path = std::env::temp_dir().join(format!(
+                "azlocaldev-persistence-test-{}-{}",
+                std::process::id(),
+                n
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            std::env::set_var(DATA_DIR_OVERRIDE_ENV, &path);
+            Self { path, _guard: guard }
+        }
+    }
+
+    impl Drop for TempDataDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+            std::env::remove_var(DATA_DIR_OVERRIDE_ENV);
+        }
+    }
+
+    #[test]
+    fn save_then_load_round_trips() {
+        let _dir = TempDataDir::new();
+        let path = data_file("widgets", "widget-1");
+        let dump = SampleDump { counter: 42, label: "hello".to_string() };
+
+        save(&path, "widget-1", dump.clone(), "Widget");
+        let loaded: Option<SampleDump> = load(&path, "widget-1", "Widget");
+
+        assert_eq!(loaded, Some(dump));
+    }
+
+    #[test]
+    fn load_rejects_mismatched_stamped_id() {
+        let _dir = TempDataDir::new();
+        let path = data_file("widgets", "widget-1");
+        let dump = SampleDump { counter: 1, label: "x".to_string() };
+
+        save(&path, "widget-1", dump, "Widget");
+        // Loading under a DIFFERENT expected id must be rejected, even though the file exists.
+        let loaded: Option<SampleDump> = load(&path, "widget-2", "Widget");
+
+        assert_eq!(loaded, None);
+    }
+
+    #[test]
+    fn load_returns_none_for_missing_file() {
+        let _dir = TempDataDir::new();
+        let path = data_file("widgets", "never-saved");
+        let loaded: Option<SampleDump> = load(&path, "never-saved", "Widget");
+        assert_eq!(loaded, None);
+    }
+
+    #[test]
+    fn load_returns_none_for_malformed_json() {
+        let _dir = TempDataDir::new();
+        let path = data_file("widgets", "widget-1");
+        std::fs::write(&path, "not valid json").unwrap();
+
+        let loaded: Option<SampleDump> = load(&path, "widget-1", "Widget");
+        assert_eq!(loaded, None);
+    }
+
+    #[test]
+    fn sanitize_id_replaces_unsafe_characters() {
+        assert_eq!(sanitize_id("service-bus_1"), "service-bus_1");
+        assert_eq!(sanitize_id("weird/name:1"), "weird_name_1");
+    }
+
+    #[test]
+    fn data_dir_is_isolated_by_module_name() {
+        let _dir = TempDataDir::new();
+        let a = data_dir("module-a");
+        let b = data_dir("module-b");
+        assert_ne!(a, b);
+        assert!(a.ends_with("module-a"));
+        assert!(b.ends_with("module-b"));
+    }
+}
+

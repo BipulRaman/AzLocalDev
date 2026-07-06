@@ -132,7 +132,14 @@ impl EmulatorEngine for AppInsightsEngine {
     async fn stop(&self) -> anyhow::Result<()> {
         let mut guard = self.state.lock().await;
         if let Some(state) = guard.take() {
+            // `.abort()` only *requests* cancellation - awaiting the handle afterward blocks
+            // until the task (and the TCP listener it owns) has actually finished unwinding,
+            // so the OS socket is genuinely released before a caller can act on `stop()`
+            // having completed - e.g. immediately calling `start()` again on the same port,
+            // which would otherwise occasionally fail with a spurious "port already in use"
+            // race (see the identical fix in `emu-servicebus-engine`/`emu-storage-engine`).
             state.handle.abort();
+            let _ = state.handle.await;
             tracing::info!("Application Insights emulator stopped");
         }
         Ok(())

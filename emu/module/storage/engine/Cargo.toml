@@ -21,3 +21,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 axum = "0.7"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
+
+[dev-dependencies]
+bytes = { workspace = true }
