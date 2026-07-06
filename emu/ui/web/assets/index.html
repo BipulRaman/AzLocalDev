@@ -803,6 +803,22 @@
 
   <div class="toast-stack" id="toast-stack"></div>
 
-  <script src="/app.js"></script>
+  <!-- Split from a single monolithic app.js into these ordered, plain (non-module) scripts.
+       Order matters: classic <script> tags share one global scope and run top-to-bottom in
+       document order, so later files can freely reference functions/state declared in
+       earlier ones (e.g. `el()`, `api()`, `engineCache`) - this mirrors exactly how the
+       original single file worked, just physically split for readability/maintainability. -->
+  <script src="/js/01-state-routing.js"></script>
+  <script src="/js/02-ui-core.js"></script>
+  <script src="/js/03-app-shell.js"></script>
+  <script src="/js/04-view-home.js"></script>
+  <script src="/js/05-view-group.js"></script>
+  <script src="/js/06-forms-basic.js"></script>
+  <script src="/js/07-view-storage-queues-tables.js"></script>
+  <script src="/js/08-forms-resource.js"></script>
+  <script src="/js/09-view-servicebus.js"></script>
+  <script src="/js/10-view-storage-blob.js"></script>
+  <script src="/js/11-view-appinsights.js"></script>
+  <script src="/js/12-events-boot.js"></script>
 </body>
 </html>
