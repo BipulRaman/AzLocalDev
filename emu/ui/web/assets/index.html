@@ -12,7 +12,7 @@
 </head>
 <body>
   <header class="topbar-global">
-    <div class="topbar-brand">
+    <div class="topbar-brand" id="topbar-brand">
       <img class="topbar-brand-mark" src="/icon.svg" alt="" />
       <span>Az.Local.Dev</span>
     </div>
@@ -24,7 +24,7 @@
   </header>
 
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <button class="btn btn-primary btn-block" id="new-resource-btn">+ New resource</button>
 
       <nav class="nav" id="resource-nav">
@@ -53,6 +53,8 @@
         </div>
       </div>
     </aside>
+
+    <div class="sidebar-resizer" id="sidebar-resizer"></div>
 
     <div class="content">
       <header class="topbar">

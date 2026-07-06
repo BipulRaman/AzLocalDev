@@ -263,6 +263,56 @@ el("check-updates-btn")?.addEventListener("click", () => checkForUpdates(false))
   checkForUpdates(true);
 })();
 
+// ------------------------------------------------------------ sidebar resize
+
+/** Lets the left nav be widened/narrowed by dragging the thin strip between it and the
+ * content column (previously a fixed 240px). Width is persisted to localStorage so it
+ * survives reloads/restarts. `.topbar-brand` is kept in sync so the global search box in the
+ * top bar keeps lining up with the content column below it (see its own CSS comment). */
+(function initSidebarResizer() {
+  const sidebar = el("sidebar");
+  const resizer = el("sidebar-resizer");
+  const brand = el("topbar-brand");
+  if (!sidebar || !resizer) return;
+
+  const MIN_WIDTH = 180;
+  const MAX_WIDTH = 480;
+  const STORAGE_KEY = "sidebarWidth";
+
+  function applyWidth(px) {
+    const width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, px));
+    sidebar.style.width = `${width}px`;
+    if (brand) brand.style.width = `${width}px`;
+    return width;
+  }
+
+  const saved = parseInt(localStorage.getItem(STORAGE_KEY), 10);
+  if (!Number.isNaN(saved)) applyWidth(saved);
+
+  let dragging = false;
+
+  resizer.addEventListener("mousedown", (ev) => {
+    dragging = true;
+    resizer.classList.add("dragging");
+    document.body.classList.add("sidebar-resizing");
+    ev.preventDefault();
+  });
+
+  window.addEventListener("mousemove", (ev) => {
+    if (!dragging) return;
+    applyWidth(ev.clientX);
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove("dragging");
+    document.body.classList.remove("sidebar-resizing");
+    localStorage.setItem(STORAGE_KEY, parseInt(sidebar.style.width, 10));
+  });
+})();
+
+
 // ----------------------------------------------------------- rename dialog
 
 el("rename-form").addEventListener("submit", async (ev) => {
