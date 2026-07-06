@@ -340,9 +340,13 @@ impl EmulatorEngine for ServiceBusEngine {
         if self.is_running().await {
             // Appending the Managed-Identity-style fields to the same `;`-separated string
             // means the dashboard's existing connection-string detail view picks them up for
-            // free, right alongside the SAS connection string.
+            // free, right alongside the SAS connection string. The dashboard
+            // (`parseConnectionDetails`/`extraFields` in app.js) strips these back out of the
+            // displayed "Connection string" field, so what a user copies for real use is a
+            // proper, standards-only Service Bus connection string with no extra keys tacked
+            // on.
             Some(format!(
-                "{};ManagedIdentityEndpoint=amqps://{}:{};ManagedIdentityNamespace={};ManagedIdentityCredential=managedidentity",
+                "{};ManagedIdentityEndpoint=amqps://{}:{};ManagedIdentityNamespace={}",
                 self.connection_string(),
                 self.amqps_host,
                 AMQPS_PORT,

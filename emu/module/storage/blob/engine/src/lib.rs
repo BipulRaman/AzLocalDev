@@ -400,12 +400,15 @@ impl EmulatorEngine for StorageEngine {
 
     async fn detail(&self) -> Option<String> {
         if self.is_running().await {
-            // Appending the Managed-Identity-style fields to the same `;`-separated string
-            // means the dashboard's existing connection-string detail view picks them up for
+            // Appending the Managed-Identity-style field to the same `;`-separated string
+            // means the dashboard's existing connection-string detail view picks it up for
             // free, right alongside the account key connection string - same trick the
-            // Service Bus engine uses.
+            // Service Bus engine uses. The dashboard (`parseConnectionDetails`/`extraFields`
+            // in app.js) strips this back out of the displayed "Connection string" field, so
+            // what a user copies for real use (e.g. `AzureWebJobsStorage`) is a proper,
+            // standards-only Azure Storage connection string with no extra keys tacked on.
             Some(format!(
-                "{};ManagedIdentityBlobServiceUri={};ManagedIdentityCredential=managedidentity",
+                "{};ManagedIdentityBlobServiceUri={}",
                 self.connection_string(),
                 self.https_blob_service_uri()
             ))

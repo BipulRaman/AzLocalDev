@@ -255,7 +255,10 @@ el("check-updates-btn")?.addEventListener("click", () => checkForUpdates(false))
   try {
     const { version } = await api("/api/version");
     const versionEl = el("app-version");
-    if (versionEl) versionEl.textContent = `v${version}`;
+    // Local dev builds report a valid-but-noisy semver like `0.0.0-dev+3c8fe75` (see
+    // `build.rs`'s fallback, needed so `self_update`'s semver comparisons still work) -
+    // collapse that down to a plain "dev" for display; released builds (`vX.Y.Z`) show as-is.
+    if (versionEl) versionEl.textContent = version.startsWith("0.0.0-dev") ? "dev" : `v${version}`;
   } catch {
     /* ignore - version display is best-effort */
   }
@@ -732,6 +735,10 @@ function updateGroupToggle() {
   input.checked = info.any;
   input.disabled = info.total === 0;
   label.textContent = info.total === 0 ? "No resources" : info.any ? "Enabled" : "Disabled";
+  // Unlike the per-row toggles (recreated from scratch on every render, so they never carry
+  // a stale `.loading` class forward), this is a single static element reused across
+  // renders - it must be cleared explicitly here once the group's real state is known.
+  setSwitchLoading(input, false);
 }
 
 el("group-toggle-input").addEventListener("change", async (ev) => {
@@ -971,6 +978,7 @@ function openDetailsModal(id) {
     // extra field - shown with its own label, alongside the regular connection string.
     const extraFields = [
       { label: "ManagedIdentityNamespace", title: "fullyQualifiedNamespace (Managed Identity)" },
+      { label: "ManagedIdentityEndpoint", title: "AMQPS endpoint (Managed Identity)" },
       { label: "ManagedIdentityBlobServiceUri", title: "blobServiceUri (Managed Identity)" },
       { label: "OtlpEndpoint", title: "OTLP endpoint (OTEL_EXPORTER_OTLP_ENDPOINT)" },
       { label: "OtlpProtocol", title: "OTLP protocol (OTEL_EXPORTER_OTLP_PROTOCOL)" },
