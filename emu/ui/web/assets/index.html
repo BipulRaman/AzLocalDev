@@ -66,7 +66,7 @@
 
       <main class="view-container">
         <!-- Home: list of resource groups -->
-        <section id="view-dashboard" class="view">
+        <section id="view-dashboard">
           <div class="view-heading">
             <div>
               <h1>Resource groups</h1>
@@ -79,7 +79,7 @@
             </button>
           </div>
           <div id="groups" class="az-table-wrap">
-            <table class="az-table">
+            <table>
               <thead>
                 <tr><th class="col-toggle"></th><th>Name</th><th>Resources</th><th>Created</th><th class="col-actions"></th></tr>
               </thead>
@@ -93,14 +93,14 @@
         </section>
 
         <!-- All resources, across every group and type -->
-        <section id="view-all-resources" class="view hidden">
+        <section id="view-all-resources" class="hidden">
           <div class="view-heading">
             <div>
               <h1>Resources</h1>
             </div>
           </div>
           <div id="all-resources" class="az-table-wrap">
-            <table class="az-table">
+            <table>
               <thead>
                 <tr><th class="col-toggle"></th><th>Name</th><th>Type</th><th>Resource group</th><th class="col-actions">Details</th><th class="col-actions"></th></tr>
               </thead>
@@ -114,14 +114,14 @@
         </section>
 
         <!-- All running resources across every group -->
-        <section id="view-running" class="view hidden">
+        <section id="view-running" class="hidden">
           <div class="view-heading">
             <div>
               <h1>Running resources</h1>
             </div>
           </div>
           <div id="running-resources" class="az-table-wrap">
-            <table class="az-table">
+            <table>
               <thead>
                 <tr><th class="col-toggle"></th><th>Name</th><th>Type</th><th>Resource group</th><th class="col-actions">Details</th></tr>
               </thead>
@@ -134,14 +134,14 @@
         </section>
 
         <!-- All resources of one type, across every group -->
-        <section id="view-kind" class="view hidden">
+        <section id="view-kind" class="hidden">
           <div class="view-heading">
             <div>
               <h1 id="kind-title"></h1>
             </div>
           </div>
           <div id="kind-resources" class="az-table-wrap">
-            <table class="az-table">
+            <table>
               <thead>
                 <tr><th class="col-toggle"></th><th>Name</th><th>Resource group</th><th class="col-actions">Details</th><th class="col-actions"></th></tr>
               </thead>
@@ -154,7 +154,7 @@
         </section>
 
         <!-- Resource group detail: resources inside it -->
-        <section id="view-group" class="view hidden">
+        <section id="view-group" class="hidden">
           <div class="view-heading">
             <div>
               <h1 id="group-title"></h1>
@@ -180,7 +180,7 @@
             </button>
           </div>
           <div id="group-resources" class="az-table-wrap">
-            <table class="az-table">
+            <table>
               <thead>
                 <tr><th class="col-toggle"></th><th>Name</th><th>Type</th><th class="col-actions">Details</th><th class="col-actions"></th></tr>
               </thead>
@@ -194,7 +194,7 @@
         </section>
 
         <!-- Service Bus instance: queue list -->
-        <section id="view-servicebus" class="view hidden">
+        <section id="view-servicebus" class="hidden">
           <div class="view-heading">
             <div>
               <h1 id="sb-instance-title">Service Bus</h1>
@@ -212,7 +212,7 @@
             </div>
           </div>
           <div id="sb-queues" class="az-table-wrap">
-            <table class="az-table">
+            <table>
               <thead>
                 <tr><th>Name</th><th>Active</th><th>Scheduled</th><th>Deferred</th><th>Dead-letter</th><th class="col-actions"></th></tr>
               </thead>
@@ -226,7 +226,7 @@
         </section>
 
         <!-- Service Bus: single queue detail -->
-        <section id="view-queue" class="view hidden">
+        <section id="view-queue" class="hidden">
           <div class="view-heading">
             <div>
               <h1 id="sb-queue-title"></h1>
@@ -265,7 +265,7 @@
         </section>
 
         <!-- Storage (Blob) instance: container list -->
-        <section id="view-storage-blob" class="view hidden">
+        <section id="view-storage-blob" class="hidden">
           <div class="view-heading">
             <div>
               <h1 id="blob-instance-title">Storage</h1>
@@ -278,7 +278,7 @@
             <button class="tab-btn" data-storage-view="tables">Tables</button>
           </div>
 
-          <div id="storage-view-containers" class="storage-subview">
+          <div id="storage-view-containers">
             <div class="command-bar">
               <button class="cmd-btn cmd-btn-primary" id="blob-new-container-btn">
                 <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -286,7 +286,7 @@
               </button>
             </div>
             <div id="blob-containers" class="az-table-wrap">
-              <table class="az-table">
+              <table>
                 <thead>
                   <tr><th>Name</th><th>Blobs</th><th>Created</th><th class="col-actions"></th></tr>
                 </thead>
@@ -299,7 +299,7 @@
             </div>
           </div>
 
-          <div id="storage-view-queues" class="storage-subview hidden">
+          <div id="storage-view-queues" class="hidden">
             <div class="command-bar">
               <button class="cmd-btn cmd-btn-primary" id="squeue-new-btn">
                 <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -307,7 +307,7 @@
               </button>
             </div>
             <div id="squeue-list" class="az-table-wrap">
-              <table class="az-table">
+              <table>
                 <thead>
                   <tr><th>Name</th><th>Approx. messages</th><th class="col-actions"></th></tr>
                 </thead>
@@ -320,7 +320,7 @@
             </div>
           </div>
 
-          <div id="storage-view-tables" class="storage-subview hidden">
+          <div id="storage-view-tables" class="hidden">
             <div class="command-bar">
               <button class="cmd-btn cmd-btn-primary" id="stable-new-btn">
                 <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -328,7 +328,7 @@
               </button>
             </div>
             <div id="stable-list" class="az-table-wrap">
-              <table class="az-table">
+              <table>
                 <thead>
                   <tr><th>Name</th><th>Entities</th><th class="col-actions"></th></tr>
                 </thead>
@@ -343,7 +343,7 @@
         </section>
 
         <!-- Storage (Blob): single container detail -->
-        <section id="view-blob-container" class="view hidden">
+        <section id="view-blob-container" class="hidden">
           <div class="view-heading">
             <div>
               <h1 id="blob-container-title"></h1>
@@ -357,7 +357,7 @@
             <input type="file" id="blob-upload-input" class="hidden" />
           </div>
           <div id="blob-blobs" class="az-table-wrap">
-            <table class="az-table">
+            <table>
               <thead>
                 <tr><th>Name</th><th>Size</th><th>Content type</th><th>Last modified</th><th class="col-actions"></th></tr>
               </thead>
@@ -370,7 +370,7 @@
         </section>
 
         <!-- Storage (Queue): single queue detail -->
-        <section id="view-squeue-detail" class="view hidden">
+        <section id="view-squeue-detail" class="hidden">
           <div class="view-heading">
             <div>
               <h1 id="squeue-detail-title"></h1>
@@ -388,7 +388,7 @@
             </button>
           </div>
           <div id="squeue-messages" class="az-table-wrap">
-            <table class="az-table">
+            <table>
               <thead>
                 <tr><th>Message Id</th><th>Inserted</th><th>Expires</th><th>Dequeue count</th><th>Body</th></tr>
               </thead>
@@ -401,7 +401,7 @@
         </section>
 
         <!-- Storage (Table): single table detail -->
-        <section id="view-stable-detail" class="view hidden">
+        <section id="view-stable-detail" class="hidden">
           <div class="view-heading">
             <div>
               <h1 id="stable-detail-title"></h1>
@@ -414,7 +414,7 @@
             </button>
           </div>
           <div id="stable-entities" class="az-table-wrap">
-            <table class="az-table">
+            <table>
               <thead>
                 <tr><th>PartitionKey</th><th>RowKey</th><th>Timestamp</th><th>Properties</th><th class="col-actions"></th></tr>
               </thead>
@@ -427,7 +427,7 @@
         </section>
 
         <!-- Application Insights instance: Aspire-dashboard-style telemetry views -->
-        <section id="view-app-insights" class="view hidden">
+        <section id="view-app-insights" class="hidden">
           <div class="view-heading">
             <div>
               <h1 id="ai-instance-title">Application Insights</h1>

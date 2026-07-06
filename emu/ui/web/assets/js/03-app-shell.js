@@ -447,7 +447,7 @@ function renderSidebar() {
     const anyRunning = ofKind.some((e) => e.running);
     const kindLink = document.createElement("a");
     kindLink.href = "#";
-    kindLink.className = "nav-item nav-group-link";
+    kindLink.className = "nav-item";
     kindLink.dataset.kind = k.kind;
     kindLink.title = `${k.display_name} - ${count} resource${count === 1 ? "" : "s"}, ${ofKind.filter((e) => e.running).length} running`;
     kindLink.innerHTML = `
@@ -468,7 +468,7 @@ function renderSidebar() {
     const info = groupRunningInfo(group.id);
     const groupLink = document.createElement("a");
     groupLink.href = "#";
-    groupLink.className = "nav-item nav-group-link";
+    groupLink.className = "nav-item";
     groupLink.dataset.group = group.id;
     groupLink.title = `${info.total} resource${info.total === 1 ? "" : "s"}, ${info.running} running`;
     groupLink.innerHTML = `
