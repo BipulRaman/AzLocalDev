@@ -82,8 +82,12 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
     init_crypto_provider();
 
     let dir = cert_dir();
-    let cert_path = dir.join("dev-cert.pem");
-    let key_path = dir.join("dev-key.pem");
+    // "v2" because the SAN list grew from just `127.0.0.1` to the full multi-instance
+    // loopback range (see `generate_pem`) - bumping the file name forces every existing
+    // install to transparently regenerate instead of keeping a stale cert that only
+    // validates for instance_seq == 1.
+    let cert_path = dir.join("dev-cert-v2.pem");
+    let key_path = dir.join("dev-key-v2.pem");
 
     let (cert_pem, key_pem) = match (
         std::fs::read_to_string(&cert_path),
@@ -115,13 +119,24 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
 }
 
 /// Marker file written by [`DevCertificate::trust`] on success, so [`DevCertificate::is_trusted`]
-/// doesn't need to repeat that check (or callers to re-prompt) on every launch.
+/// doesn't need to repeat that check (or callers to re-prompt) on every launch. Versioned
+/// ("v2") alongside the cert/key file names so a previously-trusted *old* cert doesn't make
+/// [`DevCertificate::is_trusted`] falsely report the new cert as already trusted.
 fn trusted_marker_path() -> PathBuf {
-    cert_dir().join("dev-cert.trusted")
+    cert_dir().join("dev-cert-v2.trusted")
 }
 
 fn generate_pem() -> anyhow::Result<(String, String)> {
-    let names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+    // Every emulator instance gets its own dedicated `127.0.0.{instance_seq}` loopback
+    // address (see `ServiceBusEngine::new`), so a Managed-Identity-style client dialing a
+    // specific instance's `fullyQualifiedNamespace` performs real hostname verification
+    // against that exact IP - a cert whose SAN list only covers `127.0.0.1` fails with
+    // `RemoteCertificateNameMismatch` for every other instance, which the SDK retries
+    // forever. `instance_seq` is a `u8`, so cover the entire `127.0.0.1`..=`127.0.0.254`
+    // range up front (0 and 255 are not assigned) rather than trying to predict how many
+    // instances will ever run.
+    let mut names: Vec<String> = vec!["localhost".to_string()];
+    names.extend((1u8..=254).map(|n| format!("127.0.0.{n}")));
     let rcgen::CertifiedKey { cert, key_pair } = rcgen::generate_simple_self_signed(names)?;
     Ok((cert.pem(), key_pair.serialize_pem()))
 }
