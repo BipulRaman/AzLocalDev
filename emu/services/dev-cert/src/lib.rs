@@ -82,12 +82,25 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
     init_crypto_provider();
 
     let dir = cert_dir();
-    // "v2" because the SAN list grew from just `127.0.0.1` to the full multi-instance
-    // loopback range (see `generate_pem`) - bumping the file name forces every existing
-    // install to transparently regenerate instead of keeping a stale cert that only
-    // validates for instance_seq == 1.
-    let cert_path = dir.join("dev-cert-v2.pem");
-    let key_path = dir.join("dev-key-v2.pem");
+    let cert_path = dir.join("dev-cert.pem");
+    let key_path = dir.join("dev-key.pem");
+    let version_path = dir.join("dev-cert.san-version");
+
+    // Force a one-time regeneration whenever `CERT_SAN_VERSION` changes (bumped in
+    // `generate_pem`'s doc comment whenever its SAN list requirements change) - the
+    // persisted cert/key files carry no version info of their own, so without this an
+    // already-persisted cert from before a SAN-list fix (e.g. one that only covered
+    // `127.0.0.1`, before multi-instance addressing needed the full loopback range) would
+    // be reused forever. Deleting the stale files here makes the reuse check below fall
+    // through to a fresh `generate_pem()` call, as if none existed yet.
+    let up_to_date = std::fs::read_to_string(&version_path)
+        .map(|v| v.trim() == CERT_SAN_VERSION)
+        .unwrap_or(false);
+    if !up_to_date {
+        let _ = std::fs::remove_file(&cert_path);
+        let _ = std::fs::remove_file(&key_path);
+        let _ = std::fs::remove_file(trusted_marker_path());
+    }
 
     let (cert_pem, key_pem) = match (
         std::fs::read_to_string(&cert_path),
@@ -98,6 +111,7 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
             let (cert_pem, key_pem) = generate_pem()?;
             std::fs::write(&cert_path, &cert_pem)?;
             std::fs::write(&key_path, &key_pem)?;
+            std::fs::write(&version_path, CERT_SAN_VERSION)?;
             // A freshly generated cert/key invalidates any previous trust marker - the old
             // trust (if any) was for a different key and doesn't carry over.
             let _ = std::fs::remove_file(trusted_marker_path());
@@ -119,12 +133,16 @@ pub fn load_or_generate() -> anyhow::Result<DevCertificate> {
 }
 
 /// Marker file written by [`DevCertificate::trust`] on success, so [`DevCertificate::is_trusted`]
-/// doesn't need to repeat that check (or callers to re-prompt) on every launch. Versioned
-/// ("v2") alongside the cert/key file names so a previously-trusted *old* cert doesn't make
-/// [`DevCertificate::is_trusted`] falsely report the new cert as already trusted.
+/// doesn't need to repeat that check (or callers to re-prompt) on every launch.
 fn trusted_marker_path() -> PathBuf {
-    cert_dir().join("dev-cert-v2.trusted")
+    cert_dir().join("dev-cert.trusted")
 }
+
+/// Bump this whenever `generate_pem`'s SAN list changes in a way that requires an already
+/// -persisted cert to be discarded and regenerated - see the version check in
+/// `load_or_generate`. Went from "1" (only `localhost` + `127.0.0.1`) to "2" (full
+/// `127.0.0.1`..=`127.0.0.254` loopback range, for multi-instance addressing).
+const CERT_SAN_VERSION: &str = "2";
 
 fn generate_pem() -> anyhow::Result<(String, String)> {
     // Every emulator instance gets its own dedicated `127.0.0.{instance_seq}` loopback
