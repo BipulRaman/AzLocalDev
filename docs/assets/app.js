@@ -1,150 +1,125 @@
-const root = document.documentElement;
-const sidebar = document.querySelector("[data-sidebar]");
-const menuToggle = document.querySelector("[data-menu-toggle]");
-const menuClose = document.querySelector("[data-menu-close]");
-const themeToggle = document.querySelector("[data-theme-toggle]");
-const searchInput = document.querySelector("#docs-search");
-const searchResults = document.querySelector("#search-results");
+document.documentElement.classList.add("js");
+
+const header = document.querySelector("[data-header]");
+const menuButton = document.querySelector("[data-menu-toggle]");
+const mobileMenu = document.querySelector("[data-mobile-menu]");
 const toast = document.querySelector(".toast");
-const sections = [...document.querySelectorAll(".doc-section[id]")];
-const navigationLinks = [...document.querySelectorAll(".sidebar a[href^='#'], .on-this-page a[href^='#']")];
 
-const storedTheme = localStorage.getItem("azlocaldev-docs-theme");
-const preferredTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-setTheme(storedTheme || preferredTheme);
-
-function setTheme(theme) {
-  root.dataset.theme = theme;
-  themeToggle.setAttribute("aria-label", theme === "dark" ? "Use light theme" : "Use dark theme");
-  document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#101715" : "#075d59";
+function renderIcons(container = document) {
+  if (window.lucide) window.lucide.createIcons({ attrs: { "stroke-width": 1.8 }, root: container });
 }
 
-themeToggle.addEventListener("click", () => {
-  const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
-  setTheme(nextTheme);
-  localStorage.setItem("azlocaldev-docs-theme", nextTheme);
-});
+renderIcons();
 
 function setMenu(open) {
-  sidebar.classList.toggle("open", open);
-  menuToggle.setAttribute("aria-expanded", String(open));
-  document.body.style.overflow = open ? "hidden" : "";
+  mobileMenu.hidden = !open;
+  menuButton.setAttribute("aria-expanded", String(open));
+  menuButton.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+  document.body.classList.toggle("menu-open", open);
+
+  const icon = menuButton.querySelector("svg");
+  if (icon) {
+    icon.outerHTML = `<i data-lucide="${open ? "x" : "menu"}" aria-hidden="true"></i>`;
+    renderIcons(menuButton);
+  }
 }
 
-menuToggle.addEventListener("click", () => setMenu(!sidebar.classList.contains("open")));
-menuClose.addEventListener("click", () => setMenu(false));
-sidebar.addEventListener("click", (event) => {
+menuButton.addEventListener("click", () => {
+  setMenu(menuButton.getAttribute("aria-expanded") !== "true");
+});
+
+mobileMenu.addEventListener("click", (event) => {
   if (event.target.closest("a")) setMenu(false);
 });
 
-const searchIndex = sections.map((section) => ({
-  id: section.id,
-  title: section.dataset.searchTitle,
-  text: section.textContent.replace(/\s+/g, " ").trim()
-}));
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 980 && !mobileMenu.hidden) setMenu(false);
+});
 
-function closeSearch() {
-  searchResults.hidden = true;
-  searchResults.innerHTML = "";
+function updateHeader() {
+  header.classList.toggle("scrolled", window.scrollY > 12);
 }
 
-function renderSearch(query) {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (normalizedQuery.length < 2) {
-    closeSearch();
-    return;
-  }
+window.addEventListener("scroll", updateHeader, { passive: true });
+updateHeader();
 
-  const matches = searchIndex.filter((item) =>
-    item.title.toLowerCase().includes(normalizedQuery) || item.text.toLowerCase().includes(normalizedQuery)
-  ).slice(0, 7);
+const revealObserver = new IntersectionObserver((entries, observer) => {
+  entries.forEach((entry) => {
+    if (!entry.isIntersecting) return;
+    entry.target.classList.add("visible");
+    observer.unobserve(entry.target);
+  });
+}, { rootMargin: "0px 0px -8%", threshold: 0.08 });
 
-  if (!matches.length) {
-    searchResults.innerHTML = '<div class="search-empty">No matching documentation</div>';
-  } else {
-    searchResults.innerHTML = matches.map((item) => {
-      const lowerText = item.text.toLowerCase();
-      const matchIndex = lowerText.indexOf(normalizedQuery);
-      const excerptStart = Math.max(0, matchIndex - 36);
-      const excerpt = item.text.slice(excerptStart, excerptStart + 105);
-      return `<a href="#${item.id}"><strong>${item.title}</strong><span>${excerpt}</span></a>`;
-    }).join("");
-  }
-  searchResults.hidden = false;
+document.querySelectorAll(".reveal").forEach((element) => revealObserver.observe(element));
+
+function showToast(message) {
+  toast.textContent = message;
+  toast.hidden = false;
+  toast.classList.remove("show");
+  void toast.offsetWidth;
+  toast.classList.add("show");
+  window.setTimeout(() => { toast.hidden = true; }, 2000);
 }
-
-searchInput.addEventListener("input", () => renderSearch(searchInput.value));
-searchInput.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    searchInput.blur();
-    closeSearch();
-  }
-  if (event.key === "Enter") {
-    const firstResult = searchResults.querySelector("a");
-    if (firstResult) firstResult.click();
-  }
-});
-
-searchResults.addEventListener("click", () => {
-  searchInput.value = "";
-  closeSearch();
-});
-
-document.addEventListener("click", (event) => {
-  if (!event.target.closest(".search")) closeSearch();
-});
-
-document.addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-    event.preventDefault();
-    searchInput.focus();
-  }
-});
 
 document.querySelectorAll("[data-copy-target]").forEach((button) => {
   button.addEventListener("click", async () => {
     const target = document.getElementById(button.dataset.copyTarget);
+    if (!target) return;
+
     try {
       await navigator.clipboard.writeText(target.innerText);
-      button.textContent = "Copied";
-      toast.hidden = false;
-      toast.classList.remove("show");
-      void toast.offsetWidth;
-      toast.classList.add("show");
-      window.setTimeout(() => {
-        button.textContent = "Copy";
-        toast.hidden = true;
-      }, 2000);
+      const label = button.querySelector("span");
+      if (label) label.textContent = "Copied";
+      showToast("Commands copied to clipboard");
+      window.setTimeout(() => { if (label) label.textContent = "Copy"; }, 2000);
     } catch {
       const selection = window.getSelection();
       const range = document.createRange();
       range.selectNodeContents(target);
       selection.removeAllRanges();
       selection.addRange(range);
-      button.textContent = "Selected";
-      window.setTimeout(() => { button.textContent = "Copy"; }, 2000);
+      showToast("Commands selected");
     }
   });
 });
 
-const observer = new IntersectionObserver((entries) => {
-  const visible = entries
-    .filter((entry) => entry.isIntersecting)
-    .sort((first, second) => second.intersectionRatio - first.intersectionRatio)[0];
-  if (!visible) return;
-
-  navigationLinks.forEach((link) => {
-    link.classList.toggle("active", link.getAttribute("href") === `#${visible.target.id}`);
-  });
-}, { rootMargin: "-18% 0px -66%", threshold: [0, 0.1, 0.3] });
-
-sections.forEach((section) => observer.observe(section));
-
-function updateProgress() {
-  const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-  const progress = scrollable > 0 ? Math.min(100, (window.scrollY / scrollable) * 100) : 0;
-  document.querySelector(".page-progress i").style.width = `${progress}%`;
+function formatBytes(bytes) {
+  const megabytes = bytes / (1024 * 1024);
+  return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB ZIP`;
 }
 
-window.addEventListener("scroll", updateProgress, { passive: true });
-updateProgress();
+async function loadLatestRelease() {
+  try {
+    const response = await fetch("https://api.github.com/repos/BipulRaman/AzLocalDev/releases/latest", {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+    if (!response.ok) return;
+
+    const release = await response.json();
+    const asset = release.assets.find((item) => item.name === "AzLocalDev-x86_64-pc-windows-msvc.zip");
+    const version = release.tag_name.startsWith("v") ? release.tag_name : `v${release.tag_name}`;
+
+    document.querySelectorAll("[data-release-label]").forEach((element) => {
+      element.textContent = `${version} available`;
+    });
+    document.querySelectorAll("[data-release-version]").forEach((element) => {
+      element.textContent = `${version} stable`;
+    });
+    document.querySelectorAll("[data-release-heading]").forEach((element) => {
+      element.textContent = `Az.Local.Dev ${version}`;
+    });
+
+    if (!asset) return;
+    document.querySelectorAll("[data-release-size]").forEach((element) => {
+      element.textContent = formatBytes(asset.size);
+    });
+    document.querySelectorAll("[data-download-link]").forEach((link) => {
+      link.href = asset.browser_download_url;
+    });
+  } catch {
+    // Static latest-release links remain fully functional when the API is unavailable.
+  }
+}
+
+loadLatestRelease();
