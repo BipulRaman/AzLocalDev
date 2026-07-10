@@ -19,12 +19,28 @@
   --header-height: 72px;
   --max-width: 1240px;
   --shadow: 0 24px 70px rgba(18, 42, 37, 0.14);
+  --shadow-lift: 0 32px 80px rgba(18, 42, 37, 0.18), 0 8px 20px rgba(18, 42, 37, 0.08);
+  --ring: 0 0 0 3px rgba(8, 135, 122, 0.28);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   font-family: "Manrope", sans-serif;
   color-scheme: light;
   font-synthesis: none;
 }
 
 * { box-sizing: border-box; }
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: 5px;
+}
 
 html {
   scroll-behavior: smooth;
@@ -379,4 +395,186 @@ footer { padding: 64px 0 24px; border-top: 1px solid var(--line); background: va
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
   .js .reveal { opacity: 1; transform: none; }
+}
+
+/* ============================================================
+   Premium polish layer
+   Adds depth, motion and refinement over the base design.
+   ============================================================ */
+
+/* Refined selection colour */
+::selection { background: rgba(8, 135, 122, 0.18); color: var(--ink); }
+
+/* --- Header: deeper glass, subtle brand shine --- */
+.site-header {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  transition: border-color 300ms var(--ease-out), box-shadow 300ms var(--ease-out), background-color 300ms var(--ease-out);
+}
+.site-header.scrolled {
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 34px rgba(18, 42, 37, 0.08);
+}
+.brand img { transition: transform 400ms var(--ease-spring), filter 400ms var(--ease-out); }
+.brand:hover img { transform: rotate(-8deg) scale(1.06); filter: drop-shadow(0 4px 10px rgba(8, 135, 122, 0.35)); }
+.nav-download { transition: background-color 200ms var(--ease-out), transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out); }
+.nav-download:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(5, 103, 95, 0.28); }
+
+/* --- Hero: living aurora glow behind the content --- */
+.hero::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -20% -10% auto -10%;
+  height: 120%;
+  background:
+    radial-gradient(42% 55% at 18% 18%, rgba(8, 135, 122, 0.20), transparent 70%),
+    radial-gradient(38% 50% at 82% 8%, rgba(57, 120, 200, 0.16), transparent 70%),
+    radial-gradient(46% 60% at 68% 92%, rgba(201, 229, 93, 0.14), transparent 72%);
+  filter: blur(8px);
+  opacity: 0.9;
+  animation: aurora-drift 22s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes aurora-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(2.5%, 1.5%, 0) scale(1.06); }
+  100% { transform: translate3d(-2%, -1%, 0) scale(1.03); }
+}
+
+/* Gradient-graded hero name with a soft sheen */
+h1 {
+  background: linear-gradient(135deg, var(--ink) 0%, #1f3d38 46%, var(--teal-dark) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  letter-spacing: -0.02em;
+}
+.release-pill {
+  backdrop-filter: blur(6px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+/* --- Buttons: tactile depth + travelling shine --- */
+.button { position: relative; overflow: hidden; transition: transform 200ms var(--ease-spring), background-color 200ms var(--ease-out), border-color 200ms var(--ease-out), box-shadow 250ms var(--ease-out); }
+.button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.35) 48%, transparent 62%);
+  transform: translateX(-120%);
+  transition: transform 650ms var(--ease-out);
+  pointer-events: none;
+}
+.button:hover::after { transform: translateX(120%); }
+.button:active { transform: translateY(0) scale(0.98); }
+.button-primary { background: linear-gradient(180deg, var(--teal) 0%, var(--teal-dark) 100%); box-shadow: 0 12px 26px rgba(5, 103, 95, 0.24), 0 1px 0 rgba(255, 255, 255, 0.25) inset; }
+.button-primary:hover { box-shadow: 0 18px 38px rgba(5, 103, 95, 0.32), 0 1px 0 rgba(255, 255, 255, 0.3) inset; }
+.button-accent { box-shadow: 0 12px 26px rgba(201, 229, 93, 0.28); }
+.button-accent:hover { box-shadow: 0 18px 40px rgba(201, 229, 93, 0.4); }
+
+/* --- Product shot: gentle float, glossy sweep and richer frame --- */
+.product-shot {
+  transition: transform 500ms var(--ease-out), box-shadow 500ms var(--ease-out);
+  animation: shot-float 9s ease-in-out infinite;
+}
+.product-shot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.28) 0%, transparent 30%, transparent 100%);
+  pointer-events: none;
+}
+.product-shot:hover {
+  transform: translateY(-6px);
+  box-shadow: 14px 18px 0 rgba(8, 135, 122, 0.14), 0 40px 90px rgba(18, 42, 37, 0.24);
+}
+@keyframes shot-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+
+/* --- Proof strip: glowing index numerals --- */
+.proof-strip { position: relative; overflow: hidden; }
+.proof-strip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 120% at 50% 0%, rgba(201, 229, 93, 0.08), transparent 70%);
+  pointer-events: none;
+}
+.proof-grid div { transition: background-color 250ms var(--ease-out); }
+.proof-grid div:hover { background: rgba(255, 255, 255, 0.04); }
+.proof-grid strong { text-shadow: 0 0 18px rgba(201, 229, 93, 0.35); }
+
+/* --- Feature cards: lift + accent wash on hover --- */
+.feature-row { transition: transform 300ms var(--ease-out), box-shadow 300ms var(--ease-out), z-index 0ms; z-index: 1; }
+.feature-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 100% at 100% 0%, rgba(8, 135, 122, 0.06), transparent 55%);
+  opacity: 0;
+  transition: opacity 300ms var(--ease-out);
+  pointer-events: none;
+}
+.feature-row:hover { transform: translateY(-4px); box-shadow: 0 22px 46px rgba(18, 42, 37, 0.12); z-index: 2; }
+.feature-row:hover::after { opacity: 1; }
+.feature-icon { transition: transform 350ms var(--ease-spring), box-shadow 350ms var(--ease-out); }
+.feature-row:hover .feature-icon { transform: translateY(-2px) scale(1.06); box-shadow: 0 10px 22px rgba(8, 135, 122, 0.22); }
+
+/* --- Service cards: elevate, brighten the accent bar --- */
+.service { transition: transform 320ms var(--ease-out), box-shadow 320ms var(--ease-out), border-color 320ms var(--ease-out); }
+.service::before { transition: height 280ms var(--ease-out), filter 280ms var(--ease-out); }
+.service:hover { transform: translateY(-6px); border-color: var(--line-strong); box-shadow: 0 30px 60px rgba(18, 42, 37, 0.16); }
+.service:hover::before { height: 7px; filter: saturate(1.3) brightness(1.05); }
+.service-topline span { transition: transform 350ms var(--ease-spring); }
+.service:hover .service-topline span { transform: scale(1.08) rotate(-3deg); }
+.service code { transition: background-color 250ms var(--ease-out), color 250ms var(--ease-out); }
+.service:hover code { background: var(--teal-soft); }
+
+/* --- Download panel: neon rim glow --- */
+.download-section::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  left: -10%;
+  width: 60%;
+  height: 160%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(8, 135, 122, 0.16), transparent 70%);
+  pointer-events: none;
+}
+.download-action { transition: transform 320ms var(--ease-out), box-shadow 320ms var(--ease-out); }
+.download-action:hover { transform: translateY(-4px); box-shadow: 0 34px 78px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(201, 229, 93, 0.25); }
+.download-action > img { transition: transform 500ms var(--ease-spring); }
+.download-action:hover > img { transform: rotate(6deg) scale(1.05); }
+
+/* --- Terminals: soft ambient glow + refined header dots --- */
+.terminal { transition: box-shadow 320ms var(--ease-out), transform 320ms var(--ease-out); }
+.terminal:hover { box-shadow: 0 26px 60px rgba(13, 27, 24, 0.24); }
+.terminal-status > span { animation: pulse-dot 2.4s ease-in-out infinite; }
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(57, 188, 114, 0.12); }
+  50%      { box-shadow: 0 0 0 7px rgba(57, 188, 114, 0.06); }
+}
+
+/* --- Links: animated arrow nudge --- */
+.text-link svg, .security-note a svg { transition: transform 220ms var(--ease-out); }
+.text-link:hover svg, .security-note a:hover svg { transform: translate(2px, -2px); }
+
+/* --- Footer links: subtle slide --- */
+.footer-links a { transition: color 200ms var(--ease-out), transform 200ms var(--ease-out); }
+.footer-links a:hover { transform: translateX(3px); }
+
+/* --- Reveal: richer entrance with blur --- */
+.js .reveal { opacity: 0; transform: translateY(22px); filter: blur(6px); transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out), filter 700ms var(--ease-out); }
+.js .reveal.visible { opacity: 1; transform: translateY(0); filter: blur(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .js .reveal { opacity: 1; transform: none; filter: none; }
+  .hero::after, .product-shot { animation: none !important; }
 }
