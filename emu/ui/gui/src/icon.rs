@@ -20,10 +20,8 @@ pub fn render_rgba(size: u32) -> (Vec<u8>, u32) {
     let tree_size = tree.size();
 
     let mut pixmap = Pixmap::new(size, size).expect("non-zero icon size");
-    let transform = Transform::from_scale(
-        size as f32 / tree_size.width(),
-        size as f32 / tree_size.height(),
-    );
+    let scale = size as f32 / tree_size.width() * 1.055;
+    let transform = Transform::from_row(scale, 0.0, 0.0, scale, -1.52, -0.93);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
     (unpremultiply(pixmap.data()), size)
