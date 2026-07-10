@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Documentation for Az.Local.Dev, a self-contained local emulator for Azure Service Bus, Storage, and Application Insights.">
+  <meta name="theme-color" content="#075d59">
+  <title>Az.Local.Dev Docs</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to documentation</a>
+
+  <header class="topbar">
+    <button class="icon-button menu-button" type="button" data-menu-toggle aria-label="Open navigation" aria-expanded="false" title="Open navigation">
+      <span></span><span></span><span></span>
+    </button>
+    <a class="brand" href="#overview" aria-label="Az.Local.Dev documentation home">
+      <img src="assets/icon.svg" alt="" width="34" height="34">
+      <span>Az.Local.Dev</span>
+      <small>Docs</small>
+    </a>
+
+    <div class="search" role="search">
+      <span class="search-icon" aria-hidden="true"></span>
+      <input id="docs-search" type="search" placeholder="Search documentation" autocomplete="off" aria-label="Search documentation" aria-controls="search-results">
+      <kbd>Ctrl K</kbd>
+      <div id="search-results" class="search-results" hidden></div>
+    </div>
+
+    <a class="github-link" href="https://github.com/birajkafle/AzLocalDev" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+    <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Use dark theme" title="Toggle theme">
+      <span class="sun" aria-hidden="true">☀</span>
+      <span class="moon" aria-hidden="true">☾</span>
+    </button>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar" data-sidebar>
+      <nav aria-label="Documentation">
+        <div class="nav-group">
+          <p>Start here</p>
+          <a href="#overview" class="active">Overview</a>
+          <a href="#quickstart">Quickstart</a>
+          <a href="#first-resource">Create a resource</a>
+        </div>
+        <div class="nav-group">
+          <p>Connect</p>
+          <a href="#service-bus">Service Bus</a>
+          <a href="#storage">Storage</a>
+          <a href="#app-insights">Application Insights</a>
+          <a href="#managed-identity">Identity-style auth</a>
+        </div>
+        <div class="nav-group">
+          <p>Understand</p>
+          <a href="#architecture">Architecture</a>
+          <a href="#persistence">Persistence</a>
+          <a href="#compatibility">Compatibility</a>
+          <a href="#limits">Scope and limits</a>
+        </div>
+      </nav>
+      <div class="sidebar-meta">
+        <span>Windows</span>
+        <span>v0.1.0-dev</span>
+      </div>
+    </aside>
+    <button class="sidebar-scrim" type="button" data-menu-close aria-label="Close navigation" tabindex="-1"></button>
+
+    <main id="main-content" class="content">
+      <section id="overview" class="doc-section intro" data-search-title="Overview">
+        <div class="eyebrow"><span></span> Local Azure development, contained</div>
+        <h1>Run Azure-shaped services on your machine.</h1>
+        <p class="lede">Az.Local.Dev is a self-contained Windows tray app that emulates Azure Service Bus, Storage, and Application Insights using the wire protocols official Azure SDKs already understand.</p>
+        <div class="intro-actions">
+          <a class="button primary" href="#quickstart">Get started <span aria-hidden="true">↓</span></a>
+          <a class="button secondary" href="DESIGN.md">Read the design</a>
+        </div>
+        <div class="signal-grid" aria-label="Project highlights">
+          <div><strong>3</strong><span>resource families</span></div>
+          <div><strong>1</strong><span>tray application</span></div>
+          <div><strong>0</strong><span>cloud subscriptions</span></div>
+          <div><strong>Real</strong><span>AMQP and REST</span></div>
+        </div>
+      </section>
+
+      <section id="quickstart" class="doc-section" data-search-title="Quickstart">
+        <div class="section-heading">
+          <span class="section-number">01</span>
+          <div><p class="kicker">Install and run</p><h2>Quickstart</h2></div>
+        </div>
+        <p>Build the tray application from the Cargo workspace, then launch it from the repository root.</p>
+        <div class="code-block">
+          <div class="code-header"><span>PowerShell</span><button class="copy-button" type="button" data-copy-target="quickstart-code">Copy</button></div>
+          <pre id="quickstart-code"><code><span class="prompt">PS&gt;</span> cargo build -p emu-gui
+<span class="prompt">PS&gt;</span> .\target\debug\AzLocalDev.exe</code></pre>
+        </div>
+        <div class="callout success">
+          <span class="callout-mark" aria-hidden="true">✓</span>
+          <div><strong>Dashboard ready</strong><p>The first launch opens <a href="http://127.0.0.1:7777">127.0.0.1:7777</a>. Later, left-click the tray icon to reopen it.</p></div>
+        </div>
+        <div class="step-list">
+          <article><span>1</span><div><h3>Build once</h3><p>Cargo compiles the GUI and all emulator engines into one Windows executable.</p></div></article>
+          <article><span>2</span><div><h3>Launch quietly</h3><p>The app lives in the system tray and hosts the management dashboard locally.</p></div></article>
+          <article><span>3</span><div><h3>Point your SDK at it</h3><p>Copy a resource connection string from the dashboard into your app configuration.</p></div></article>
+        </div>
+      </section>
+
+      <section id="first-resource" class="doc-section" data-search-title="Create your first resource">
+        <div class="section-heading">
+          <span class="section-number">02</span>
+          <div><p class="kicker">Dashboard workflow</p><h2>Create your first resource</h2></div>
+        </div>
+        <p>Resource groups organize local services just as they do in Azure, without reproducing the Azure control plane.</p>
+        <ol class="workflow">
+          <li><span>01</span><div><strong>Open a resource group</strong><p>Use the default group created on first launch, or add one for your project.</p></div></li>
+          <li><span>02</span><div><strong>Add a resource</strong><p>Choose Service Bus, Storage, or Application Insights and give the instance a name.</p></div></li>
+          <li><span>03</span><div><strong>Copy connection details</strong><p>Open the information panel on the resource row. Credentials are accepted but not validated.</p></div></li>
+          <li><span>04</span><div><strong>Develop normally</strong><p>Use an official Azure SDK, Azure Functions binding, or an OpenTelemetry exporter.</p></div></li>
+        </ol>
+      </section>
+
+      <section id="service-bus" class="doc-section service-section" data-search-title="Connect to Service Bus">
+        <div class="section-heading">
+          <span class="section-number coral">SB</span>
+          <div><p class="kicker">AMQP 1.0</p><h2>Service Bus</h2></div>
+        </div>
+        <div class="service-summary">
+          <p>Queues support active, scheduled, deferred, and dead-lettered messages with peek-lock semantics, lock expiry, and redelivery.</p>
+          <div class="protocol-badges"><span>AMQP :5672+</span><span>AMQPS :5671</span></div>
+        </div>
+        <h3>Azure Functions binding</h3>
+        <p>Set a named connection value in <code>local.settings.json</code>, then use that name in the trigger or binding.</p>
+        <div class="code-block">
+          <div class="code-header"><span>local.settings.json</span><button class="copy-button" type="button" data-copy-target="servicebus-code">Copy</button></div>
+          <pre id="servicebus-code"><code>{
+  <span class="key">"IsEncrypted"</span>: <span class="value">false</span>,
+  <span class="key">"Values"</span>: {
+    <span class="key">"FUNCTIONS_WORKER_RUNTIME"</span>: <span class="string">"dotnet-isolated"</span>,
+    <span class="key">"ServiceBusConnection"</span>: <span class="string">"Endpoint=sb://localhost:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=emulator;UseDevelopmentEmulator=true"</span>
+  }
+}</code></pre>
+        </div>
+        <div class="feature-line"><strong>Dashboard tools</strong><span>Create queues</span><span>Peek messages</span><span>Complete</span><span>Abandon</span><span>Dead-letter</span><span>Resubmit</span></div>
+      </section>
+
+      <section id="storage" class="doc-section service-section" data-search-title="Connect to Azure Storage">
+        <div class="section-heading">
+          <span class="section-number blue">ST</span>
+          <div><p class="kicker">Blob + Queue + Table REST</p><h2>Storage</h2></div>
+        </div>
+        <div class="service-summary">
+          <p>One local Storage resource exposes three path-style endpoints, matching Azurite’s port convention and the shape of an Azure Storage account.</p>
+          <div class="protocol-badges"><span>Blob :10000+</span><span>Queue :10001+</span><span>Table :10002+</span></div>
+        </div>
+        <h3>AzureWebJobsStorage</h3>
+        <p>Use the unified connection string for Functions host bookkeeping, Blob bindings, queue triggers, Table bindings, and common Durable Functions flows.</p>
+        <div class="code-block">
+          <div class="code-header"><span>local.settings.json</span><button class="copy-button" type="button" data-copy-target="storage-code">Copy</button></div>
+          <pre id="storage-code"><code>{
+  <span class="key">"IsEncrypted"</span>: <span class="value">false</span>,
+  <span class="key">"Values"</span>: {
+    <span class="key">"FUNCTIONS_WORKER_RUNTIME"</span>: <span class="string">"dotnet-isolated"</span>,
+    <span class="key">"AzureWebJobsStorage"</span>: <span class="string">"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=emulator;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;"</span>
+  }
+}</code></pre>
+        </div>
+        <div class="capability-grid">
+          <article><span class="capability-icon blob">B</span><div><h3>Blob</h3><p>Containers, block blobs, metadata, upload, download, delete, and list.</p></div></article>
+          <article><span class="capability-icon queue">Q</span><div><h3>Queue</h3><p>Queue lifecycle plus put, get, peek, delete, and update message flows.</p></div></article>
+          <article><span class="capability-icon table">T</span><div><h3>Table</h3><p>Table lifecycle, entity mutations, and PartitionKey-filtered queries.</p></div></article>
+        </div>
+      </section>
+
+      <section id="app-insights" class="doc-section service-section" data-search-title="Connect to Application Insights">
+        <div class="section-heading">
+          <span class="section-number amber">AI</span>
+          <div><p class="kicker">Breeze + OTLP/HTTP</p><h2>Application Insights</h2></div>
+        </div>
+        <div class="service-summary">
+          <p>Capture classic Application Insights telemetry or OTLP/HTTP JSON and inspect traces, structured logs, and metrics in the local dashboard.</p>
+          <div class="protocol-badges"><span>POST /v2/track</span><span>POST /v1/traces</span><span>/v1/logs</span><span>/v1/metrics</span></div>
+        </div>
+        <div class="split-details">
+          <div>
+            <h3>Classic SDKs</h3>
+            <p>Copy the generated <code>APPLICATIONINSIGHTS_CONNECTION_STRING</code> value from the resource details panel.</p>
+          </div>
+          <div>
+            <h3>OpenTelemetry</h3>
+            <p>Use the displayed OTLP endpoint and explicitly select JSON encoding.</p>
+            <div class="code-block compact">
+              <div class="code-header"><span>Environment</span><button class="copy-button" type="button" data-copy-target="otlp-code">Copy</button></div>
+              <pre id="otlp-code"><code>OTEL_EXPORTER_OTLP_PROTOCOL=http/json</code></pre>
+            </div>
+          </div>
+        </div>
+        <div class="callout note">
+          <span class="callout-mark" aria-hidden="true">i</span>
+          <div><strong>JSON encoding only</strong><p>The OTLP receiver does not accept protobuf. Configure exporters for <code>http/json</code>.</p></div>
+        </div>
+      </section>
+
+      <section id="managed-identity" class="doc-section" data-search-title="Managed identity-style connections">
+        <div class="section-heading">
+          <span class="section-number">03</span>
+          <div><p class="kicker">TokenCredential clients</p><h2>Identity-style connections</h2></div>
+        </div>
+        <p>Real Managed Identity requires Microsoft Entra ID and cannot be reproduced locally. Apps that create clients from <code>DefaultAzureCredential</code> can still connect: the emulator accepts the locally resolved token without validating it.</p>
+        <div class="endpoint-table-wrap">
+          <table>
+            <thead><tr><th>Service</th><th>Connection-string endpoint</th><th>TokenCredential endpoint</th></tr></thead>
+            <tbody>
+              <tr><td>Service Bus</td><td><code>sb://localhost:5672</code></td><td><code>AMQPS :5671</code></td></tr>
+              <tr><td>Storage Blob</td><td><code>http://127.0.0.1:10000</code></td><td><code>https://127.0.0.1:20000</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code-block">
+          <div class="code-header"><span>local.settings.json</span><button class="copy-button" type="button" data-copy-target="identity-code">Copy</button></div>
+          <pre id="identity-code"><code>{
+  <span class="key">"Values"</span>: {
+    <span class="key">"AzureWebJobsStorage__blobServiceUri"</span>: <span class="string">"https://127.0.0.1:20000/devstoreaccount1"</span>,
+    <span class="key">"ServiceBus__fullyQualifiedNamespace"</span>: <span class="string">"127.0.0.1"</span>
+  }
+}</code></pre>
+        </div>
+        <details>
+          <summary>Trust the development certificate manually</summary>
+          <p>The app asks before adding its shared self-signed certificate to the current Windows user’s trusted roots. If that step fails, run:</p>
+          <div class="code-block compact">
+            <div class="code-header"><span>PowerShell</span><button class="copy-button" type="button" data-copy-target="cert-code">Copy</button></div>
+            <pre id="cert-code"><code>certutil -user -addstore Root "$env:APPDATA\AzLocalDev\certs\dev-cert.pem"</code></pre>
+          </div>
+        </details>
+      </section>
+
+      <section id="architecture" class="doc-section wide-section" data-search-title="Architecture">
+        <div class="section-heading">
+          <span class="section-number">04</span>
+          <div><p class="kicker">One process, real protocols</p><h2>Architecture</h2></div>
+        </div>
+        <p>The tray binary owns the dashboard, generic registry, persistence layer, and each concrete emulator engine. Client applications never need a project-specific library.</p>
+        <div class="architecture-map" role="img" aria-label="Client applications and browser connect to protocol engines and dashboard inside the AzLocalDev tray process">
+          <div class="map-column clients-column">
+            <p>Clients</p>
+            <div class="map-node"><span>SDK</span><strong>Azure SDK apps</strong><small>.NET · Java · JS · Python · Go</small></div>
+            <div class="map-node"><span>Fn</span><strong>Azure Functions</strong><small>Triggers and bindings</small></div>
+            <div class="map-node"><span>UI</span><strong>Browser</strong><small>Dashboard on :7777</small></div>
+          </div>
+          <div class="map-flow" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div class="map-app">
+            <div class="map-app-title"><img src="assets/icon.svg" alt="" width="30" height="30"><div><strong>AzLocalDev.exe</strong><small>Single tray process</small></div></div>
+            <div class="engine-grid">
+              <div class="engine-node sb"><strong>Service Bus engine</strong><small>AMQP / AMQPS</small></div>
+              <div class="engine-node storage"><strong>Storage engine</strong><small>Blob · Queue · Table REST</small></div>
+              <div class="engine-node insights"><strong>Insights engine</strong><small>Breeze · OTLP/HTTP</small></div>
+              <div class="engine-node dashboard"><strong>Dashboard + registry</strong><small>Axum · persistence</small></div>
+            </div>
+          </div>
+        </div>
+        <h3>Crate boundaries</h3>
+        <div class="crate-list">
+          <div><code>emu-*-core</code><span>Domain state and behavior without network I/O.</span></div>
+          <div><code>emu-*-server / amqp</code><span>Azure-compatible wire protocol adapters.</span></div>
+          <div><code>emu-*-engine</code><span>Runnable resource instances implementing <code>EmulatorEngine</code>.</span></div>
+          <div><code>emu-registry</code><span>Resource groups, engine factories, and generic lifecycle control.</span></div>
+          <div><code>emu-web / emu-gui</code><span>Dashboard APIs, embedded assets, tray app, and startup wiring.</span></div>
+        </div>
+      </section>
+
+      <section id="persistence" class="doc-section" data-search-title="Persistence">
+        <div class="section-heading">
+          <span class="section-number">05</span>
+          <div><p class="kicker">Automatic local state</p><h2>Persistence</h2></div>
+        </div>
+        <p>Resource topology is saved on each change. Service data uses resource-specific persistence policies under <code>%APPDATA%\AzLocalDev</code>.</p>
+        <div class="persistence-grid">
+          <article><div class="status-dot saved"></div><div><h3>Resource groups</h3><p><code>groups\{group-id}.json</code></p><strong>Persisted on every change</strong></div></article>
+          <article><div class="status-dot saved"></div><div><h3>Service Bus</h3><p><code>data\service-bus\{id}.json</code></p><strong>Persisted</strong></div></article>
+          <article><div class="status-dot saved"></div><div><h3>Storage blobs</h3><p><code>data\storage\{id}.json</code></p><strong>Persisted</strong></div></article>
+          <article><div class="status-dot transient"></div><div><h3>Queue, Table, telemetry</h3><p>Runtime memory</p><strong>Reset between launches</strong></div></article>
+        </div>
+      </section>
+
+      <section id="compatibility" class="doc-section" data-search-title="Compatibility">
+        <div class="section-heading">
+          <span class="section-number">06</span>
+          <div><p class="kicker">Supported clients</p><h2>Compatibility</h2></div>
+        </div>
+        <div class="compatibility-list">
+          <div><strong>Official Azure SDKs</strong><span>.NET, Java, JavaScript, Python, and Go clients can connect through their normal endpoint configuration.</span></div>
+          <div><strong>Azure Functions</strong><span>Service Bus triggers/bindings, Storage bindings, host storage, and common Durable Functions flows.</span></div>
+          <div><strong>OpenTelemetry SDKs</strong><span>OTLP/HTTP exporters configured for JSON encoding.</span></div>
+          <div><strong>Operating system</strong><span>Windows today. The tray app and certificate trust flow are Windows-specific.</span></div>
+        </div>
+      </section>
+
+      <section id="limits" class="doc-section final-section" data-search-title="Scope and limits">
+        <div class="section-heading">
+          <span class="section-number">07</span>
+          <div><p class="kicker">Deliberately focused</p><h2>Scope and limits</h2></div>
+        </div>
+        <div class="limits-layout">
+          <div>
+            <h3>Built for</h3>
+            <ul class="check-list">
+              <li>Local development and integration tests</li>
+              <li>Real SDK and Azure Functions workflows</li>
+              <li>Fast, dependency-free service setup</li>
+              <li>Inspecting local messages, data, and telemetry</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Not a goal</h3>
+            <ul class="dash-list">
+              <li>Azure Resource Manager or billing APIs</li>
+              <li>Real authentication, RBAC, or Entra validation</li>
+              <li>Multi-node clustering or high availability</li>
+              <li>Complete parity with every protocol feature</li>
+            </ul>
+          </div>
+        </div>
+        <div class="next-step">
+          <img src="assets/icon.svg" alt="" width="50" height="50">
+          <div><p>Ready to run locally?</p><strong>Build the tray app and open the dashboard.</strong></div>
+          <a class="button primary" href="#quickstart">View quickstart <span aria-hidden="true">↑</span></a>
+        </div>
+      </section>
+
+      <footer>
+        <a class="footer-brand" href="#overview"><img src="assets/icon.svg" alt="" width="28" height="28"><strong>Az.Local.Dev</strong></a>
+        <p>Local emulator for development and testing.</p>
+        <div><a href="../README.md">README</a><a href="DESIGN.md">Design document</a><a href="https://github.com/birajkafle/AzLocalDev">Source</a></div>
+      </footer>
+    </main>
+
+    <aside class="on-this-page" aria-label="On this page">
+      <p>On this page</p>
+      <a href="#overview">Overview</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#service-bus">Service Bus</a>
+      <a href="#storage">Storage</a>
+      <a href="#app-insights">Application Insights</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#limits">Scope and limits</a>
+      <span class="page-progress"><i></i></span>
+    </aside>
+  </div>
+  <div class="toast" role="status" aria-live="polite" hidden>Copied to clipboard</div>
+</body>
+</html>
