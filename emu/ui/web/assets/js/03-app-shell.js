@@ -104,6 +104,40 @@ el("about-btn")?.addEventListener("click", () => openModal("modal-about"));
   });
 })();
 
+// ------------------------------------------------------- mobile navigation
+
+(function initMobileNavigation() {
+  const menuButton = el("mobile-nav-btn");
+  const sidebar = el("sidebar");
+  const scrim = el("sidebar-scrim");
+  const mobileLayout = window.matchMedia("(max-width: 860px)");
+  if (!menuButton || !sidebar || !scrim) return;
+
+  function setOpen(open) {
+    const shouldOpen = open && mobileLayout.matches;
+    document.body.classList.toggle("sidebar-open", shouldOpen);
+    menuButton.setAttribute("aria-expanded", String(shouldOpen));
+    menuButton.setAttribute("aria-label", shouldOpen ? "Close navigation" : "Open navigation");
+    scrim.tabIndex = shouldOpen ? 0 : -1;
+  }
+
+  menuButton.addEventListener("click", () => setOpen(!document.body.classList.contains("sidebar-open")));
+  scrim.addEventListener("click", () => {
+    setOpen(false);
+    menuButton.focus();
+  });
+  sidebar.addEventListener("click", (event) => {
+    if (event.target.closest(".nav-item")) setOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
+      setOpen(false);
+      menuButton.focus();
+    }
+  });
+  mobileLayout.addEventListener("change", () => setOpen(false));
+})();
+
 
 // ----------------------------------------------------------- rename dialog
 
