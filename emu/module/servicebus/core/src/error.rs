@@ -6,6 +6,8 @@ pub enum CoreError {
     EntityNotFound,
     #[error("no message available")]
     NoMessage,
+    #[error("the queue or subscription requires a session id, but the message has none")]
+    SessionRequired,
     #[error("lock token not found or expired")]
     LockLost,
     #[error("sequence number not found")]

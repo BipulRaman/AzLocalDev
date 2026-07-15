@@ -408,6 +408,8 @@ async fn list_queues(
 #[derive(Deserialize)]
 struct CreateQueueRequest {
     name: String,
+    #[serde(default)]
+    requires_session: bool,
 }
 
 async fn create_queue(
@@ -417,7 +419,11 @@ async fn create_queue(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let engine = require_engine(&registry, &id)?;
     let broker = require_broker(&engine).await?;
-    broker.create_queue(&req.name, EntityOptions::default());
+    let options = EntityOptions {
+        requires_session: req.requires_session,
+        ..EntityOptions::default()
+    };
+    broker.create_queue(&req.name, options);
     Ok(StatusCode::CREATED)
 }
 
@@ -527,7 +533,10 @@ async fn send_message(
     handle
         .send_message(msg)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")))?;
+        .map_err(|e| match e {
+            emu_servicebus_core::CoreError::SessionRequired => (StatusCode::BAD_REQUEST, format!("{e}")),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")),
+        })?;
     Ok(StatusCode::CREATED)
 }
 

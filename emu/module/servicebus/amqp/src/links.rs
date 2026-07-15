@@ -96,13 +96,30 @@ pub(crate) async fn handle_incoming_receiver_link(broker: Broker, mut sender: Se
     };
 
     loop {
+        // Wait for the next deliverable message, but concurrently watch for the client
+        // detaching this link. Without the detach watch we'd stay blocked in `receive*` and
+        // never release a held message session, leaking its lock forever (which permanently
+        // blocks every future receiver for that session id, since the lock lives in the
+        // broker). `on_detach` resolves as soon as the peer detaches/closes the link.
         let received = match &session_id {
             Some(sid) => {
-                entity
-                    .receive_session(sid, DeliveryMode::PeekLock, Duration::from_secs(60))
-                    .await
+                tokio::select! {
+                    r = entity.receive_session(sid, DeliveryMode::PeekLock, Duration::from_secs(30)) => r,
+                    _ = sender.on_detach() => {
+                        tracing::info!(%address, session_id = %sid, "client detached session receiver, releasing session");
+                        break;
+                    }
+                }
             }
-            None => entity.receive(DeliveryMode::PeekLock, Duration::from_secs(60)).await,
+            None => {
+                tokio::select! {
+                    r = entity.receive(DeliveryMode::PeekLock, Duration::from_secs(30)) => r,
+                    _ = sender.on_detach() => {
+                        tracing::info!(%address, "client detached receiver link");
+                        break;
+                    }
+                }
+            }
         };
         let msg = match received {
             Ok(Some(m)) => m,

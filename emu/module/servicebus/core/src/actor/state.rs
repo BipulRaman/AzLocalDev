@@ -60,6 +60,7 @@ impl EntityState {
             scheduled_count: self.scheduled.len() as u64,
             deferred_count: self.deferred.len() as u64,
             dead_letter_count: self.dead_letter.len() as u64,
+            requires_session: self.options.requires_session,
         }
     }
 
@@ -106,7 +107,14 @@ impl EntityState {
         self.locked_sessions.clear();
     }
 
-    pub(super) fn enqueue(&mut self, msg: NewMessage) -> i64 {
+    pub(super) fn enqueue(&mut self, msg: NewMessage) -> CoreResult<i64> {
+        // A session-required entity rejects any message that doesn't carry a session id,
+        // mirroring real Service Bus (which throws InvalidOperationException on send).
+        if self.options.requires_session
+            && msg.session_id.as_deref().map(str::trim).unwrap_or("").is_empty()
+        {
+            return Err(CoreError::SessionRequired);
+        }
         let seq = self.next_sequence;
         self.next_sequence += 1;
         let now = Utc::now();
@@ -137,7 +145,7 @@ impl EntityState {
         } else {
             self.active.push_back(brokered);
         }
-        seq
+        Ok(seq)
     }
 
     /// Move due scheduled messages into active, expire due locks (back to active, bumping
@@ -419,6 +427,6 @@ impl EntityState {
             scheduled_enqueue_time: None,
             time_to_live: None,
         };
-        Ok(self.enqueue(new_msg))
+        self.enqueue(new_msg)
     }
 }

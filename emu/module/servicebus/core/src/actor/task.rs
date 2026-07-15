@@ -34,9 +34,15 @@ pub fn spawn_entity(name: String, kind: EntityKind, options: EntityOptions) -> E
                     let Some(cmd) = cmd else { break };
                     match cmd {
                         Command::Send { msg, reply } => {
-                            let seq = state.enqueue(msg);
-                            notify_for_task.notify_waiters();
-                            let _ = reply.send(Ok(seq));
+                            match state.enqueue(msg) {
+                                Ok(seq) => {
+                                    notify_for_task.notify_waiters();
+                                    let _ = reply.send(Ok(seq));
+                                }
+                                Err(e) => {
+                                    let _ = reply.send(Err(e));
+                                }
+                            }
                         }
                         Command::TryReceive { mode, reply } => {
                             let msg = state.try_receive(mode);

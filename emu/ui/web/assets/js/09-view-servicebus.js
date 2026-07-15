@@ -1,5 +1,40 @@
 // ----------------------------------------------------------- service bus
 
+// name -> requires_session, populated by loadQueues/refreshQueueSessionFlag. Safe to cache
+// since a queue's session mode is immutable after creation.
+const queueRequiresSessionMap = {};
+
+// Applies the current queue's session requirement to the "Send test message" modal:
+// a session-required queue must have a session id, so the field is marked required and
+// its label reflects that.
+function applySendModalSessionRequirement() {
+  const input = el("sb-send-session-id");
+  const label = el("sb-send-session-label");
+  if (!input) return;
+  input.required = currentQueueRequiresSession;
+  if (label) {
+    label.textContent = currentQueueRequiresSession ? "Session ID (required)" : "Session ID (optional)";
+  }
+}
+
+// Resolves whether the currently-open queue requires sessions (from cache, falling back to
+// the queues list) and updates the send modal accordingly.
+async function refreshQueueSessionFlag() {
+  if (!currentInstanceId || !currentQueue) return;
+  if (currentQueue in queueRequiresSessionMap) {
+    currentQueueRequiresSession = queueRequiresSessionMap[currentQueue];
+  } else {
+    try {
+      const queues = await api(`/api/service-bus/${currentInstanceId}/queues`);
+      for (const q of queues) queueRequiresSessionMap[q.name] = !!q.stats.requires_session;
+      currentQueueRequiresSession = !!queueRequiresSessionMap[currentQueue];
+    } catch {
+      currentQueueRequiresSession = false;
+    }
+  }
+  applySendModalSessionRequirement();
+}
+
 function countChip(label, value, opts = {}) {
   const cls = ["count-chip"];
   if (value > 0) cls.push("has-value");
@@ -17,9 +52,12 @@ async function loadQueues() {
     return;
   }
 
+  for (const q of queues) queueRequiresSessionMap[q.name] = !!q.stats.requires_session;
+
   if (queueFilter) {
     queues = queues.filter((q) => q.name.toLowerCase().includes(queueFilter.toLowerCase()));
   }
+
 
   const body = el("sb-queues-body");
   const empty = el("sb-queues-empty");
@@ -38,6 +76,7 @@ async function loadQueues() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="link-cell" data-open="${q.name}">${q.name}</td>
+      <td>${q.stats.requires_session ? '<span class="pill pill-on">Enabled</span>' : '<span class="pill pill-off">Disabled</span>'}</td>
       <td>${countChip("", q.stats.active_count)}</td>
       <td>${countChip("", q.stats.scheduled_count)}</td>
       <td>${countChip("", q.stats.deferred_count)}</td>

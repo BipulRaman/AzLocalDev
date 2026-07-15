@@ -11,6 +11,9 @@ let currentInstanceName = "";
 let currentQueue = null;
 let currentState = "active";
 let queueFilter = "";
+// Whether the currently-opened Service Bus queue requires a session id on every message.
+// `requires_session` is immutable after queue creation, so this can be cached safely.
+let currentQueueRequiresSession = false;
 let currentContainerName = null;
 let currentStorageView = "containers"; // containers | queues | tables
 let currentSQueueName = null;

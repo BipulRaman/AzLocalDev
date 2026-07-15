@@ -18,6 +18,45 @@ use crate::cbs::{handle_cbs_requests, is_cbs_address};
 use crate::links::{handle_incoming_receiver_link, handle_incoming_sender_link};
 use crate::session_filter::{resolve_attach_session, SessionOutcome};
 
+/// Builds the `com.microsoft:locked-until-utc` link property carried on every accepted link.
+///
+/// Real Azure SDK clients read this property off every accepted link (used for session/
+/// message lock expiry) via `Properties.TryGetValue<long>(...)` — i.e. it MUST be a plain
+/// AMQP `long` holding .NET `DateTime` ticks (100ns units since 0001-01-01), NOT an AMQP
+/// `Timestamp` (ms since Unix epoch). Sending the wrong encoding makes `TryGetValue` silently
+/// fail, so the client falls back to `DateTime.MinValue` and crashes converting it to a
+/// `DateTimeOffset`.
+///
+/// fe2o3-amqp only exposes static, acceptor-wide link properties, so we build a brand new
+/// acceptor (from these properties) for *every* incoming attach - that's what lets each link
+/// get an up-to-date lock-until instead of one frozen at connection-open time. That freshness
+/// matters: a `ServiceBusSessionProcessor` keeps a single connection open indefinitely and opens
+/// a new session-receiver link per session it rolls through, so a value fixed at connect time
+/// would go stale and, once past, make the client immediately throw `SessionLockLost` on every
+/// new session.
+///
+/// The horizon is deliberately far in the future because the emulator's broker holds a message
+/// session lock for as long as the receiver link stays attached (it's released on detach, not
+/// on a timer - see `handle_incoming_receiver_link`). Reporting a lock that effectively never
+/// expires both reflects that reality and keeps the SDK's session-lock auto-renewal timer (which
+/// would otherwise fire against the `$management` node the emulator doesn't implement) from ever
+/// running during normal processing.
+fn locked_until_link_properties() -> Fields {
+    const DOTNET_UNIX_EPOCH_TICKS: i64 = 621_355_968_000_000_000; // DateTime(1970,1,1).Ticks
+    const LOCK_HORIZON_MS: i64 = 24 * 60 * 60 * 1000; // +24 hours
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let locked_until_ticks = DOTNET_UNIX_EPOCH_TICKS + (now_ms + LOCK_HORIZON_MS) * 10_000;
+    let mut link_properties = Fields::new();
+    link_properties.insert(
+        Symbol::from("com.microsoft:locked-until-utc"),
+        Value::Long(locked_until_ticks),
+    );
+    link_properties
+}
+
 pub(crate) async fn handle_connection(broker: Broker, mut connection: fe2o3_amqp::acceptor::ListenerConnectionHandle) {
     // Shared slot for the CBS response link: the client attaches a request link (put-
     // token, seen by us as a `Receiver`) and a separate response link (seen by us as a
@@ -30,30 +69,6 @@ pub(crate) async fn handle_connection(broker: Broker, mut connection: fe2o3_amqp
         let broker = broker.clone();
         let cbs_reply_sender = cbs_reply_sender.clone();
         tokio::spawn(async move {
-            // Real Azure SDK clients read a `com.microsoft:locked-until-utc` link
-            // property off every accepted link (used for session/message lock
-            // expiry) via `Properties.TryGetValue<long>(...)` — i.e. it MUST be a
-            // plain AMQP `long` holding .NET `DateTime` ticks (100ns units since
-            // 0001-01-01), NOT an AMQP `Timestamp` (ms since Unix epoch). Sending the
-            // wrong encoding makes TryGetValue silently fail, so the client falls back
-            // to DateTime.MinValue and crashes converting it to a DateTimeOffset. We
-            // can't set this per-attach (fe2o3-amqp only exposes static, acceptor-wide
-            // link properties), so we set a generous fixed-future value once per
-            // session.
-            const DOTNET_UNIX_EPOCH_TICKS: i64 = 621_355_968_000_000_000; // DateTime(1970,1,1).Ticks
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
-            let locked_until_ms = now_ms + 10 * 60 * 1000; // +10 minutes
-            let locked_until_ticks = DOTNET_UNIX_EPOCH_TICKS + locked_until_ms * 10_000;
-            let mut link_properties = Fields::new();
-            link_properties.insert(
-                Symbol::from("com.microsoft:locked-until-utc"),
-                Value::Long(locked_until_ticks),
-            );
-            let link_acceptor = LinkAcceptor::builder().properties(link_properties).build();
-
             // Per-link session-acceptance polling (see `resolve_attach_session`) can legitimately
             // take a long time - e.g. a `ServiceBusSessionProcessor` with several concurrent
             // "next available session" listeners and only one actual session to hand out. That
@@ -78,6 +93,11 @@ pub(crate) async fn handle_connection(broker: Broker, mut connection: fe2o3_amqp
                         });
                     }
                     Some((remote_attach, session_outcome, granted_entity)) = ready_rx.recv() => {
+                        // Fresh acceptor per attach so its `com.microsoft:locked-until-utc`
+                        // property is always current (see `locked_until_link_properties`).
+                        let link_acceptor = LinkAcceptor::builder()
+                            .properties(locked_until_link_properties())
+                            .build();
                         match link_acceptor.accept_incoming_attach(remote_attach, &mut session).await {
                             Ok(LinkEndpoint::Receiver(receiver)) => {
                                 let address = receiver

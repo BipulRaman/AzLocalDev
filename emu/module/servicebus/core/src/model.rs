@@ -95,6 +95,7 @@ pub struct EntityStats {
     pub scheduled_count: u64,
     pub deferred_count: u64,
     pub dead_letter_count: u64,
+    pub requires_session: bool,
 }
 
 /// A full, serializable snapshot of one entity's (queue or subscription) durable state -

@@ -6,6 +6,7 @@ use fe2o3_amqp_types::{
     definitions::{
         self, DeliveryNumber, DeliveryTag, Fields, Handle, Role, SequenceNo, TransferNumber,
     },
+    messaging::DeliveryState,
     performatives::{Attach, Begin, Detach, Disposition, End, Flow, Transfer},
     primitives::{Symbol, Uint},
     states::SessionState,
@@ -715,21 +716,8 @@ impl endpoint::Session for Session {
 
             let chunk_inds = consecutive_chunk_indices(&delivery_ids[..]);
 
-            let mut dispositions = Vec::with_capacity(chunk_inds.len());
-            let mut prev_ind = 0;
-            for ind in chunk_inds {
-                let slice = &delivery_ids[prev_ind..ind];
-                let disposition = Disposition {
-                    role: Role::Sender,
-                    first: slice[0],
-                    last: slice.last().copied(),
-                    settled: true,
-                    state: disposition.state.clone(),
-                    batchable: false,
-                };
-                dispositions.push(disposition);
-                prev_ind = ind;
-            }
+            let dispositions =
+                build_settled_sender_dispositions(&delivery_ids, chunk_inds, &disposition.state);
             Ok(Some(dispositions))
         }
     }
@@ -1000,6 +988,43 @@ fn consecutive_chunk_indices(delivery_ids: &[DeliveryNumber]) -> Vec<usize> {
         .collect()
 }
 
+/// Builds the settled `Disposition`(s) a sender must echo back for a batch of `delivery_ids`
+/// that a rcv-settle-mode=Second receiver has non-settled-disposed. `chunk_inds` are the
+/// *start* indices of each new consecutive run (from [`consecutive_chunk_indices`]).
+///
+/// The final run must be emitted explicitly: `chunk_inds` only marks where consecutiveness
+/// breaks, so iterating those boundaries alone drops the last run entirely - and for a single
+/// delivery id (the common "settle one at a time" case) `chunk_inds` is empty, which would
+/// otherwise produce ZERO dispositions and leave the receiver waiting forever for its settled
+/// echo. Appending `delivery_ids.len()` as a trailing boundary fixes both cases.
+fn build_settled_sender_dispositions(
+    delivery_ids: &[DeliveryNumber],
+    chunk_inds: Vec<usize>,
+    state: &Option<DeliveryState>,
+) -> Vec<Disposition> {
+    let mut dispositions = Vec::with_capacity(chunk_inds.len() + 1);
+    let mut prev_ind = 0;
+    for ind in chunk_inds
+        .into_iter()
+        .chain(std::iter::once(delivery_ids.len()))
+    {
+        if ind <= prev_ind {
+            continue;
+        }
+        let slice = &delivery_ids[prev_ind..ind];
+        dispositions.push(Disposition {
+            role: Role::Sender,
+            first: slice[0],
+            last: slice.last().copied(),
+            settled: true,
+            state: state.clone(),
+            batchable: false,
+        });
+        prev_ind = ind;
+    }
+    dispositions
+}
+
 #[cfg(test)]
 mod tests {
     use super::num_messages_settled_by_disposition;
@@ -1021,5 +1046,47 @@ mod tests {
         let last = Some(1);
         let count = num_messages_settled_by_disposition(first, last);
         assert_eq!(count, 1);
+    }
+
+    use super::{build_settled_sender_dispositions, consecutive_chunk_indices};
+    use fe2o3_amqp_types::definitions::Role;
+
+    fn build(delivery_ids: &[u32]) -> Vec<(u32, Option<u32>)> {
+        let chunk_inds = consecutive_chunk_indices(delivery_ids);
+        build_settled_sender_dispositions(delivery_ids, chunk_inds, &None)
+            .into_iter()
+            .map(|d| {
+                assert_eq!(d.role, Role::Sender);
+                assert!(d.settled);
+                (d.first, d.last)
+            })
+            .collect()
+    }
+
+    // Regression: a single non-settled disposition (the common "settle one message at a time"
+    // case for a rcv-settle-mode=Second receiver) MUST still produce exactly one settled echo.
+    // Previously `consecutive_chunk_indices` returned an empty vec for one element and the echo
+    // was silently dropped.
+    #[test]
+    fn single_delivery_id_produces_one_settled_disposition() {
+        assert_eq!(build(&[0]), vec![(0, Some(0))]);
+        assert_eq!(build(&[7]), vec![(7, Some(7))]);
+    }
+
+    #[test]
+    fn empty_delivery_ids_produce_no_dispositions() {
+        assert_eq!(build(&[]), Vec::<(u32, Option<u32>)>::new());
+    }
+
+    #[test]
+    fn consecutive_run_collapses_to_one_disposition() {
+        assert_eq!(build(&[0, 1, 2, 3]), vec![(0, Some(3))]);
+    }
+
+    // The final run must not be dropped when there are multiple non-consecutive chunks.
+    #[test]
+    fn multiple_chunks_each_produce_a_disposition() {
+        assert_eq!(build(&[0, 1, 2, 5, 6]), vec![(0, Some(2)), (5, Some(6))]);
+        assert_eq!(build(&[0, 2, 4]), vec![(0, Some(0)), (2, Some(2)), (4, Some(4))]);
     }
 }

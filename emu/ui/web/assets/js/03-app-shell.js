@@ -396,6 +396,7 @@ function navQueue(name) {
   el("sb-queue-title").textContent = name;
   syncUrl();
   loadMessages();
+  refreshQueueSessionFlag();
 }
 
 function navContainer(name) {

@@ -46,7 +46,10 @@ el("sb-purge-btn").addEventListener("click", async () => {
   await loadMessages();
 });
 
-el("sb-send-btn").addEventListener("click", () => openModal("modal-send-message"));
+el("sb-send-btn").addEventListener("click", () => {
+  applySendModalSessionRequirement();
+  openModal("modal-send-message");
+});
 
 el("sb-create-queue-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -54,14 +57,16 @@ el("sb-create-queue-form").addEventListener("submit", async (ev) => {
   const input = el("sb-new-queue-name");
   const name = input.value.trim();
   if (!name) return;
+  const requiresSession = el("sb-new-queue-requires-session").checked;
   try {
     await api(`/api/service-bus/${currentInstanceId}/queues`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, requires_session: requiresSession }),
     });
     toast("success", `Queue "${name}" created`);
     input.value = "";
+    el("sb-new-queue-requires-session").checked = false;
     closeModal("modal-new-queue");
     await loadQueues();
   } catch (err) {
@@ -74,11 +79,17 @@ el("sb-send-form").addEventListener("submit", async (ev) => {
   if (!currentInstanceId || !currentQueue) return;
   const textarea = el("sb-send-body");
   const sessionInput = el("sb-send-session-id");
+  const sessionId = sessionInput.value.trim();
+  if (currentQueueRequiresSession && !sessionId) {
+    toast("error", "This queue has sessions enabled \u2014 a session id is required.");
+    sessionInput.focus();
+    return;
+  }
   try {
     await api(`/api/service-bus/${currentInstanceId}/queues/${currentQueue}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: textarea.value, session_id: sessionInput.value.trim() || null }),
+      body: JSON.stringify({ body: textarea.value, session_id: sessionId || null }),
     });
     toast("success", "Message sent");
     textarea.value = "";

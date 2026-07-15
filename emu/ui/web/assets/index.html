@@ -216,7 +216,7 @@
           <div id="sb-queues" class="az-table-wrap">
             <table>
               <thead>
-                <tr><th>Name</th><th>Active</th><th>Scheduled</th><th>Deferred</th><th>Dead-letter</th><th class="col-actions"></th></tr>
+                <tr><th>Name</th><th>Sessions</th><th>Active</th><th>Scheduled</th><th>Deferred</th><th>Dead-letter</th><th class="col-actions"></th></tr>
               </thead>
               <tbody id="sb-queues-body"></tbody>
             </table>
@@ -694,6 +694,10 @@
       <form id="sb-create-queue-form">
         <label for="sb-new-queue-name">Queue name</label>
         <input type="text" id="sb-new-queue-name" required autocomplete="off" />
+        <label class="checkbox-label" for="sb-new-queue-requires-session">
+          <input type="checkbox" id="sb-new-queue-requires-session" />
+          Enable sessions (requires a session id on every message)
+        </label>
         <div class="modal-actions">
           <button type="button" class="btn" data-close-modal>Cancel</button>
           <button type="submit" class="btn btn-primary">Create</button>
@@ -709,7 +713,7 @@
       <form id="sb-send-form">
         <label for="sb-send-body">Message body</label>
         <textarea id="sb-send-body" rows="5"></textarea>
-        <label for="sb-send-session-id">Session ID (optional)</label>
+        <label for="sb-send-session-id" id="sb-send-session-label">Session ID (optional)</label>
         <input type="text" id="sb-send-session-id" autocomplete="off" />
         <div class="modal-actions">
           <button type="button" class="btn" data-close-modal>Cancel</button>

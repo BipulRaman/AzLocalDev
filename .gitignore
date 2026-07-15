@@ -6,7 +6,9 @@
 # testing/distribution) - not produced by any tracked build step, never committed.
 /dist/
 # vendor/fe2o3-amqp is an intentionally checked-in, patched dependency (see
-# [patch.crates-io] in Cargo.toml) - do NOT ignore it.
+# [patch.crates-io] in Cargo.toml) - do NOT ignore it. Its own build output, however
+# (produced if the crate is ever compiled/tested standalone), should be ignored.
+/vendor/fe2o3-amqp/target/
 
 # AzLocalDev's persisted data (queue/message state, self-signed dev TLS cert) normally
 # lives under %APPDATA%/AzLocalDev - only relevant here as a fallback if that resolution
